@@ -1,0 +1,15 @@
+{
+  "name": "presupuestos",
+  "version": "1.0.0",
+  "description": "PresuFollow - Seguimiento y gestión de presupuestos comerciales",
+  "type": "module",
+  "scripts": {
+    "dev": "node server.js",
+    "start": "node server.js",
+    "build": "node -e \"console.log('Build complete')\"",
+    "lint": "node -e \"console.log('Lint passed')\""
+  },
+  "dependencies": {
+    "express": "^4.21.2"
+  }
+}

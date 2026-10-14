@@ -1,14 +1,25 @@
-<!doctype html><html><head><meta charset=utf8><meta name=viewport content="width=device-width,initial-scale=1,viewport-fit=cover"><style>:root{color-scheme:light;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}html{scroll-padding-top:env(safe-area-inset-top,0px)}body{margin:0;padding:0;font:14px -apple-system,BlinkMacSystemFont,sans-serif;background:#fff;color:#000}img{max-width:100%}[hidden]:not([hidden=until-found i]){display:none!important}</style></head><body>
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <title>PresuFollow</title>
+<meta name="description" content="Herramienta de seguimiento de presupuestos y gestión comercial de propuestas.">
+<meta property="og:title" content="PresuFollow">
+<meta property="og:description" content="Herramienta de seguimiento de presupuestos y gestión comercial de propuestas.">
 <meta name="claude:viewport-fit-sides" content="cover">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:wght@600;700&family=Figtree:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>:root{color-scheme:light;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}html{scroll-padding-top:env(safe-area-inset-top,0px)}body{margin:0;padding:0;font:14px -apple-system,BlinkMacSystemFont,sans-serif;background:#fff;color:#000}img{max-width:100%}[hidden]:not([hidden=until-found i]){display:none!important}</style>
+</head>
+<body>
 <style>
 /* Layout: una columna de trabajo (máx. 980px). Cabecera con marca y acción principal, pestañas, y listas separadas por filetes en lugar de tarjetas apiladas. */
 :root{
   --bg:#F1F4F2; --surface:#FFFFFF; --surface-2:#F6F8F7;
   --ink:#13231F; --muted:#56675F; --line:#D6DFDB;
   --accent:#0B6E5D; --accent-ink:#FFFFFF; --accent-soft:#DCEEE9;
-  --warn:#8A5200; --warn-soft:#FBEACB;
+  --warn:#B45309; --warn-soft:#FEF3C7;
+  --pending:#C26700; --pending-soft:#FEF3D6;
   --bad:#A3302A; --bad-soft:#F8DDDA;
   --ok:#1D6A39; --ok-soft:#DAF0E0;
   --f-display:'Bricolage Grotesque',system-ui,sans-serif;
@@ -20,7 +31,8 @@
     --bg:#0D1614; --surface:#14201D; --surface-2:#1A2926;
     --ink:#E5EEEB; --muted:#93A59E; --line:#263733;
     --accent:#4CC3A8; --accent-ink:#06241D; --accent-soft:#173A33;
-    --warn:#F0B95A; --warn-soft:#3A2C10;
+    --warn:#F59E0B; --warn-soft:#3D2605;
+    --pending:#F59E0B; --pending-soft:#3D2605;
     --bad:#F08A82; --bad-soft:#3C1B19;
     --ok:#7BD39A; --ok-soft:#153222;
     color-scheme:dark;
@@ -30,7 +42,8 @@
   --bg:#0D1614; --surface:#14201D; --surface-2:#1A2926;
   --ink:#E5EEEB; --muted:#93A59E; --line:#263733;
   --accent:#4CC3A8; --accent-ink:#06241D; --accent-soft:#173A33;
-  --warn:#F0B95A; --warn-soft:#3A2C10;
+  --warn:#F59E0B; --warn-soft:#3D2605;
+  --pending:#F59E0B; --pending-soft:#3D2605;
   --bad:#F08A82; --bad-soft:#3C1B19;
   --ok:#7BD39A; --ok-soft:#153222;
   color-scheme:dark;
@@ -92,7 +105,7 @@ button.item:hover{background:var(--surface-2)}
 
 .chip{display:inline-flex;align-items:center;gap:6px;font-size:.78rem;font-weight:600;padding:2px 9px;border-radius:99px;white-space:nowrap}
 .chip::before{content:"";width:7px;height:7px;border-radius:50%;background:currentColor}
-.chip-enviado{background:var(--accent-soft);color:var(--accent)}
+.chip-enviado{background:var(--pending-soft);color:var(--pending)}
 .chip-pausa{background:var(--surface-2);color:var(--muted);border:1px solid var(--line)}
 .chip-aceptado{background:var(--ok-soft);color:var(--ok)}
 .chip-rechazado{background:var(--bad-soft);color:var(--bad)}
@@ -560,8 +573,8 @@ function vStats(){
   var per=[['todo','Todo'],['anio','Este año'],['mes','Este mes']];
   return '<div class="sec-h"><h2>Estadísticas</h2><div class="filters" style="margin:0" role="group" aria-label="Periodo">'+per.map(function(p){return '<button class="fchip" data-a="period" data-p="'+p[0]+'" aria-pressed="'+(ui.period===p[0])+'">'+p[1]+'</button>';}).join('')+'</div></div>'+
     (!sent.length?'<div class="empty">Aún no hay presupuestos enviados en este periodo.</div>':
-    '<div class="stack"><section><div class="bar" role="img" aria-label="Reparto del importe presupuestado"><i style="width:'+w(sum(A))+';background:var(--ok)"></i><i style="width:'+w(sum(pend))+';background:var(--accent)"></i><i style="width:'+w(sum(R))+';background:var(--bad)"></i></div>'+
-    '<div class="legend num"><span style="--c:var(--ok)">Aceptado '+fmt(sum(A))+'</span><span style="--c:var(--accent)">Pendiente o vencido '+fmt(sum(pend))+'</span><span style="--c:var(--bad)">Rechazado '+fmt(sum(R))+'</span></div>'+
+    '<div class="stack"><section><div class="bar" role="img" aria-label="Reparto del importe presupuestado"><i style="width:'+w(sum(A))+';background:var(--ok)"></i><i style="width:'+w(sum(pend))+';background:var(--pending)"></i><i style="width:'+w(sum(R))+';background:var(--bad)"></i></div>'+
+    '<div class="legend num"><span style="--c:var(--ok)">Aceptado '+fmt(sum(A))+'</span><span style="--c:var(--pending)">Pendiente o vencido '+fmt(sum(pend))+'</span><span style="--c:var(--bad)">Rechazado '+fmt(sum(R))+'</span></div>'+
     '<p class="hint" style="margin-top:6px">Son importes presupuestados. Un presupuesto aceptado no es dinero cobrado.</p></section>'+
     '<div class="kv"><div><span>Presupuestos enviados</span><span class="num">'+sent.length+'</span></div><div><span>Importe enviado</span><span class="num">'+fmt(tot)+'</span></div>'+
     '<div><span>Aceptados</span><span class="num">'+A.length+'</span></div><div><span>Rechazados</span><span class="num">'+R.length+'</span></div>'+
