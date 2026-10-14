@@ -1,5 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { AjustesView } from './components/AjustesView';
+import { AuthModal } from './components/AuthModal';
+import { AuthScreen } from './components/AuthScreen';
 import { Banner } from './components/Banner';
 import { DetalleView } from './components/DetalleView';
 import { EditFormData, EditView, createNewEditData } from './components/EditView';
@@ -8,21 +10,37 @@ import { Header } from './components/Header';
 import { HoyView } from './components/HoyView';
 import { ListaView } from './components/ListaView';
 import { Toast } from './components/Toast';
+import { AuthProvider, useAuth } from './context/AuthContext';
+import {
+  clearUserExampleQuotes,
+  deleteUserQuote,
+  saveUserQuote,
+  saveUserSettings,
+  seedUserQuotes,
+  subscribeToUserQuotes,
+  subscribeToUserSettings,
+} from './lib/firestoreService';
 import { AppState, ListFilter, Quote, Settings, TabView } from './types';
 import { nextNum, uid } from './utils/calc';
 import { addDays, isVencido, nextFu, pad, today } from './utils/date';
-import { loadState, saveState } from './utils/storage';
+import { seed } from './utils/storage';
 
-export const App: React.FC = () => {
-  const [appState, setAppState] = useState<AppState>(() => {
-    const { state } = loadState();
-    return state;
-  });
+const defaultFallbackSettings: Settings = {
+  negocio: 'Mi Negocio',
+  telefono: '',
+  iva: 21,
+  dias: [3, 7, 14],
+  condiciones: 'Forma de pago: 50 % al aceptar y 50 % al terminar el trabajo.',
+};
 
-  const [saveErr, setSaveErr] = useState<boolean>(() => {
-    const { saveErr } = loadState();
-    return saveErr;
-  });
+const MainApp: React.FC = () => {
+  const { user, loading: authLoading, logout } = useAuth();
+  const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
+
+  const [quotes, setQuotes] = useState<Quote[]>([]);
+  const [settings, setSettings] = useState<Settings>(defaultFallbackSettings);
+  const [dataLoading, setDataLoading] = useState(false);
+  const [firestoreErr, setFirestoreErr] = useState(false);
 
   const [currentTab, setCurrentTab] = useState<TabView>('hoy');
   const [selectedQuoteId, setSelectedQuoteId] = useState<string | null>(null);
@@ -32,13 +50,95 @@ export const App: React.FC = () => {
   const [searchQuery, setSearchQuery] = useState('');
   const [toastMsg, setToastMsg] = useState<string | null>(null);
 
-  // Auto-save to localStorage whenever appState changes
-  useEffect(() => {
-    const ok = saveState(appState);
-    if (!ok && !saveErr) {
-      setSaveErr(true);
+  // Helper to persist user-scoped local fallback cache
+  const saveUserLocalCache = (userId: string, userQuotes: Quote[], userSettings?: Settings) => {
+    try {
+      localStorage.setItem(`presufollow.user.${userId}.quotes`, JSON.stringify(userQuotes));
+      if (userSettings) {
+        localStorage.setItem(`presufollow.user.${userId}.settings`, JSON.stringify(userSettings));
+      }
+    } catch {
+      // LocalStorage error handled quietly
     }
-  }, [appState, saveErr]);
+  };
+
+  // Subscribe to account-specific Firestore data when user is logged in
+  useEffect(() => {
+    if (!user) {
+      setQuotes([]);
+      setSettings(defaultFallbackSettings);
+      return;
+    }
+
+    // 1. Initial quick load from local cache for instant UI rendering
+    try {
+      const cachedQuotes = localStorage.getItem(`presufollow.user.${user.uid}.quotes`);
+      if (cachedQuotes) {
+        const parsed = JSON.parse(cachedQuotes);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          setQuotes(parsed);
+        }
+      }
+      const cachedSettings = localStorage.getItem(`presufollow.user.${user.uid}.settings`);
+      if (cachedSettings) {
+        const parsedSettings = JSON.parse(cachedSettings);
+        if (parsedSettings && parsedSettings.negocio) {
+          setSettings(parsedSettings);
+        }
+      }
+    } catch {
+      // Continue to Firestore
+    }
+
+    setDataLoading(true);
+    setFirestoreErr(false);
+
+    // 2. Subscribe to Firestore quotes subcollection for this user
+    const unsubQuotes = subscribeToUserQuotes(
+      user.uid,
+      (fetchedQuotes) => {
+        setQuotes(fetchedQuotes);
+        saveUserLocalCache(user.uid, fetchedQuotes);
+        setDataLoading(false);
+        setFirestoreErr(false);
+      },
+      () => {
+        setFirestoreErr(true);
+        setDataLoading(false);
+      }
+    );
+
+    // 3. Subscribe to Firestore settings document for this user
+    const unsubSettings = subscribeToUserSettings(
+      user.uid,
+      (fetchedSettings) => {
+        if (fetchedSettings) {
+          setSettings(fetchedSettings);
+          saveUserLocalCache(user.uid, quotes, fetchedSettings);
+        } else {
+          // Initialize default configuration for this new user in Firestore
+          const initialSettings: Settings = {
+            negocio: user.displayName || 'Mi Negocio',
+            telefono: '',
+            iva: 21,
+            dias: [3, 7, 14],
+            condiciones: 'Forma de pago: 50 % al aceptar y 50 % al terminar el trabajo.',
+          };
+          setSettings(initialSettings);
+          saveUserLocalCache(user.uid, quotes, initialSettings);
+          saveUserSettings(user.uid, initialSettings).catch(() => {});
+        }
+      },
+      () => {
+        // Settings listener warning handled quietly
+      }
+    );
+
+    return () => {
+      unsubQuotes();
+      unsubSettings();
+    };
+  }, [user]);
 
   const showToast = (msg: string) => {
     setToastMsg(msg);
@@ -73,16 +173,28 @@ export const App: React.FC = () => {
     window.scrollTo(0, 0);
   };
 
+  const handleLogout = async () => {
+    try {
+      await logout();
+      showToast('Sesión cerrada');
+      setCurrentTab('hoy');
+      setSelectedQuoteId(null);
+      setEditFormData(null);
+    } catch {
+      showToast('Error al cerrar sesión');
+    }
+  };
+
   // Follow-ups due today count for badge
   const t = today();
-  const dueCount = appState.quotes.filter((q) => {
+  const dueCount = quotes.filter((q) => {
     if (q.estado !== 'enviado' || q.pausa || isVencido(q)) return false;
     const n = nextFu(q);
     return n && n.due <= t;
   }).length;
 
   const handleNewQuote = () => {
-    setEditFormData(createNewEditData(appState.settings));
+    setEditFormData(createNewEditData(settings));
     navigateTo('edit');
   };
 
@@ -102,72 +214,51 @@ export const App: React.FC = () => {
     navigateTo('edit', q.id);
   };
 
+  // Optimistic Save: Updates state & local cache immediately, then syncs to Firestore in background
   const handleSaveEdit = (data: EditFormData, andSend: boolean) => {
+    if (!user) return;
     let targetQuoteId = data.id;
+    let quoteToSave: Quote;
 
-    setAppState((prev) => {
-      const nextQuotes = [...prev.quotes];
-
-      if (data.id) {
-        // Edit existing draft
-        const idx = nextQuotes.findIndex((q) => q.id === data.id);
-        if (idx >= 0) {
-          const q = { ...nextQuotes[idx] };
-          addHistory(q, 'Borrador editado');
-          q.cliente = data.cliente;
-          q.telefono = data.telefono;
-          q.email = data.email;
-          q.titulo = data.titulo;
-          q.emision = data.emision;
-          q.validez = data.validez;
-          q.condiciones = data.condiciones;
-          q.notas = data.notas;
-          q.lineas = data.lineas;
-          nextQuotes[idx] = q;
-        }
-      } else {
-        // Create new draft
-        const newQ: Quote = {
-          id: uid(),
-          num: nextNum(prev.quotes),
-          example: false,
-          estado: 'borrador',
+    if (data.id) {
+      // Edit existing draft
+      const existing = quotes.find((q) => q.id === data.id);
+      const updated: Quote = {
+        ...(existing || {
+          id: data.id,
+          num: 'PF-0001',
           pausa: false,
           enviado: null,
           seg: [],
           resuelto: null,
           motivo: '',
           nota: '',
-          notas: data.notas,
-          cliente: data.cliente,
-          telefono: data.telefono,
-          email: data.email,
-          titulo: data.titulo,
-          emision: data.emision,
-          validez: data.validez,
-          condiciones: data.condiciones,
-          lineas: data.lineas,
+          estado: 'borrador',
           hist: [],
-        };
-        addHistory(newQ, 'Borrador creado');
-        nextQuotes.unshift(newQ);
-        targetQuoteId = newQ.id;
-      }
+        }),
+        cliente: data.cliente,
+        telefono: data.telefono,
+        email: data.email,
+        titulo: data.titulo,
+        emision: data.emision,
+        validez: data.validez,
+        condiciones: data.condiciones,
+        notas: data.notas,
+        lineas: data.lineas,
+      };
+      addHistory(updated, 'Borrador editado');
+      quoteToSave = updated;
 
-      return { ...prev, quotes: nextQuotes };
-    });
-
-    setEditFormData(null);
-    showToast('Borrador guardado');
-    navigateTo(andSend ? 'det' : 'lista', andSend ? targetQuoteId : null);
-  };
-
-  const handleDuplicateQuote = (q: Quote) => {
-    let duplicatedId = '';
-    setAppState((prev) => {
-      const dup: Quote = {
+      setQuotes((prev) => {
+        const next = prev.map((q) => (q.id === data.id ? updated : q));
+        saveUserLocalCache(user.uid, next);
+        return next;
+      });
+    } else {
+      // Create new draft
+      const newQ: Quote = {
         id: uid(),
-        num: nextNum(prev.quotes),
+        num: nextNum(quotes),
         example: false,
         estado: 'borrador',
         pausa: false,
@@ -176,91 +267,167 @@ export const App: React.FC = () => {
         resuelto: null,
         motivo: '',
         nota: '',
-        notas: q.notas,
-        cliente: q.cliente,
-        telefono: q.telefono,
-        email: q.email,
-        titulo: q.titulo,
-        emision: today(),
-        validez: addDays(today(), 30),
-        condiciones: q.condiciones,
-        lineas: q.lineas.map((l) => ({ ...l })),
+        notas: data.notas,
+        cliente: data.cliente,
+        telefono: data.telefono,
+        email: data.email,
+        titulo: data.titulo,
+        emision: data.emision,
+        validez: data.validez,
+        condiciones: data.condiciones,
+        lineas: data.lineas,
         hist: [],
       };
-      addHistory(dup, `Duplicado de ${q.num}`);
-      duplicatedId = dup.id;
+      addHistory(newQ, 'Borrador creado');
+      targetQuoteId = newQ.id;
+      quoteToSave = newQ;
 
-      setEditFormData({
-        id: dup.id,
-        cliente: dup.cliente,
-        telefono: dup.telefono,
-        email: dup.email,
-        titulo: dup.titulo,
-        emision: dup.emision,
-        validez: dup.validez,
-        lineas: dup.lineas.map((l) => ({ ...l })),
-        condiciones: dup.condiciones,
-        notas: dup.notas,
+      setQuotes((prev) => {
+        const next = [newQ, ...prev];
+        saveUserLocalCache(user.uid, next);
+        return next;
       });
+    }
 
-      return {
-        ...prev,
-        quotes: [dup, ...prev.quotes],
-      };
+    // Immediately dismiss editor and navigate
+    setEditFormData(null);
+    showToast('Borrador guardado');
+    navigateTo(andSend ? 'det' : 'lista', andSend ? targetQuoteId : null);
+
+    // Asynchronously sync to Firestore without blocking the UI
+    saveUserQuote(user.uid, quoteToSave).then((ok) => {
+      if (!ok) {
+        setFirestoreErr(true);
+      }
+    });
+  };
+
+  const handleDuplicateQuote = (q: Quote) => {
+    if (!user) return;
+    const dup: Quote = {
+      id: uid(),
+      num: nextNum(quotes),
+      example: false,
+      estado: 'borrador',
+      pausa: false,
+      enviado: null,
+      seg: [],
+      resuelto: null,
+      motivo: '',
+      nota: '',
+      notas: q.notas,
+      cliente: q.cliente,
+      telefono: q.telefono,
+      email: q.email,
+      titulo: q.titulo,
+      emision: today(),
+      validez: addDays(today(), 30),
+      condiciones: q.condiciones,
+      lineas: q.lineas.map((l) => ({ ...l })),
+      hist: [],
+    };
+    addHistory(dup, `Duplicado de ${q.num}`);
+
+    setQuotes((prev) => {
+      const next = [dup, ...prev];
+      saveUserLocalCache(user.uid, next);
+      return next;
+    });
+
+    setEditFormData({
+      id: dup.id,
+      cliente: dup.cliente,
+      telefono: dup.telefono,
+      email: dup.email,
+      titulo: dup.titulo,
+      emision: dup.emision,
+      validez: dup.validez,
+      lineas: dup.lineas.map((l) => ({ ...l })),
+      condiciones: dup.condiciones,
+      notas: dup.notas,
     });
 
     showToast('Duplicado como borrador');
-    navigateTo('edit', duplicatedId);
+    navigateTo('edit', dup.id);
+
+    saveUserQuote(user.uid, dup).then((ok) => {
+      if (!ok) setFirestoreErr(true);
+    });
   };
 
   const handleMarkSent = (quoteId: string) => {
-    setAppState((prev) => {
-      const nextQuotes = prev.quotes.map((q) => {
-        if (q.id === quoteId) {
-          const updated = { ...q };
-          updated.estado = 'enviado';
-          updated.enviado = today();
-          updated.seg = prev.settings.dias.map((d) => ({ dia: d, hecho: null }));
-          addHistory(updated, 'Presupuesto marcado como enviado');
-          return updated;
-        }
-        return q;
-      });
-      return { ...prev, quotes: nextQuotes };
+    if (!user) return;
+    const q = quotes.find((x) => x.id === quoteId);
+    if (!q) return;
+
+    const updated: Quote = {
+      ...q,
+      estado: 'enviado',
+      enviado: today(),
+      seg: settings.dias.map((d) => ({ dia: d, hecho: null })),
+    };
+    addHistory(updated, 'Presupuesto marcado como enviado');
+
+    setQuotes((prev) => {
+      const next = prev.map((item) => (item.id === quoteId ? updated : item));
+      saveUserLocalCache(user.uid, next);
+      return next;
     });
     showToast('Marcado como enviado. Te avisaré de los seguimientos.');
+
+    saveUserQuote(user.uid, updated).then((ok) => {
+      if (!ok) setFirestoreErr(true);
+    });
   };
 
   const handleFollowUpDone = (quoteId: string, stepIndex: number) => {
-    setAppState((prev) => {
-      const nextQuotes = prev.quotes.map((q) => {
-        if (q.id === quoteId) {
-          const updated = { ...q, seg: [...q.seg] };
-          updated.seg[stepIndex] = {
-            ...updated.seg[stepIndex],
-            hecho: today(),
-          };
-          addHistory(updated, `Recordatorio ${stepIndex + 1} enviado`);
-          return updated;
-        }
-        return q;
-      });
-      return { ...prev, quotes: nextQuotes };
+    if (!user) return;
+    const q = quotes.find((x) => x.id === quoteId);
+    if (!q) return;
+
+    const nextSeg = [...q.seg];
+    nextSeg[stepIndex] = {
+      ...nextSeg[stepIndex],
+      hecho: today(),
+    };
+
+    const updated: Quote = {
+      ...q,
+      seg: nextSeg,
+    };
+    addHistory(updated, `Recordatorio ${stepIndex + 1} enviado`);
+
+    setQuotes((prev) => {
+      const next = prev.map((item) => (item.id === quoteId ? updated : item));
+      saveUserLocalCache(user.uid, next);
+      return next;
     });
     showToast('Recordatorio registrado');
+
+    saveUserQuote(user.uid, updated).then((ok) => {
+      if (!ok) setFirestoreErr(true);
+    });
   };
 
   const handlePauseResume = (quoteId: string, pause: boolean) => {
-    setAppState((prev) => {
-      const nextQuotes = prev.quotes.map((q) => {
-        if (q.id === quoteId) {
-          const updated = { ...q, pausa: pause };
-          addHistory(updated, pause ? 'Seguimientos pausados' : 'Seguimientos reanudados');
-          return updated;
-        }
-        return q;
-      });
-      return { ...prev, quotes: nextQuotes };
+    if (!user) return;
+    const q = quotes.find((x) => x.id === quoteId);
+    if (!q) return;
+
+    const updated: Quote = {
+      ...q,
+      pausa: pause,
+    };
+    addHistory(updated, pause ? 'Seguimientos pausados' : 'Seguimientos reanudados');
+
+    setQuotes((prev) => {
+      const next = prev.map((item) => (item.id === quoteId ? updated : item));
+      saveUserLocalCache(user.uid, next);
+      return next;
+    });
+
+    saveUserQuote(user.uid, updated).then((ok) => {
+      if (!ok) setFirestoreErr(true);
     });
   };
 
@@ -270,180 +437,297 @@ export const App: React.FC = () => {
     motivo?: string,
     nota?: string
   ) => {
-    setAppState((prev) => {
-      const nextQuotes = prev.quotes.map((q) => {
-        if (q.id === quoteId) {
-          const updated = { ...q };
-          updated.estado = status;
-          updated.resuelto = today();
-          updated.motivo = status === 'rechazado' ? motivo || '' : '';
-          updated.nota = nota ? nota.trim() : '';
-          addHistory(
-            updated,
-            status === 'aceptado'
-              ? 'El cliente aceptó el presupuesto'
-              : `El cliente rechazó el presupuesto${motivo ? ` (${motivo})` : ''}`
-          );
-          return updated;
-        }
-        return q;
-      });
-      return { ...prev, quotes: nextQuotes };
+    if (!user) return;
+    const q = quotes.find((x) => x.id === quoteId);
+    if (!q) return;
+
+    const updated: Quote = {
+      ...q,
+      estado: status,
+      resuelto: today(),
+      motivo: status === 'rechazado' ? motivo || '' : '',
+      nota: nota ? nota.trim() : '',
+    };
+    addHistory(
+      updated,
+      status === 'aceptado'
+        ? 'El cliente aceptó el presupuesto'
+        : `El cliente rechazó el presupuesto${motivo ? ` (${motivo})` : ''}`
+    );
+
+    setQuotes((prev) => {
+      const next = prev.map((item) => (item.id === quoteId ? updated : item));
+      saveUserLocalCache(user.uid, next);
+      return next;
     });
     showToast(status === 'aceptado' ? 'Presupuesto aceptado' : 'Presupuesto rechazado');
+
+    saveUserQuote(user.uid, updated).then((ok) => {
+      if (!ok) setFirestoreErr(true);
+    });
   };
 
   const handleCancelQuote = (quoteId: string) => {
-    setAppState((prev) => {
-      const nextQuotes = prev.quotes.map((q) => {
-        if (q.id === quoteId) {
-          const updated = { ...q, estado: 'cancelado' as const };
-          addHistory(updated, 'Presupuesto cancelado');
-          return updated;
-        }
-        return q;
-      });
-      return { ...prev, quotes: nextQuotes };
+    if (!user) return;
+    const q = quotes.find((x) => x.id === quoteId);
+    if (!q) return;
+
+    const updated: Quote = {
+      ...q,
+      estado: 'cancelado',
+    };
+    addHistory(updated, 'Presupuesto cancelado');
+
+    setQuotes((prev) => {
+      const next = prev.map((item) => (item.id === quoteId ? updated : item));
+      saveUserLocalCache(user.uid, next);
+      return next;
     });
     showToast('Presupuesto cancelado');
+
+    saveUserQuote(user.uid, updated).then((ok) => {
+      if (!ok) setFirestoreErr(true);
+    });
   };
 
   const handleDeleteDraft = (quoteId: string) => {
-    setAppState((prev) => ({
-      ...prev,
-      quotes: prev.quotes.filter((q) => q.id !== quoteId),
-    }));
+    if (!user) return;
+    setQuotes((prev) => {
+      const next = prev.filter((q) => q.id !== quoteId);
+      saveUserLocalCache(user.uid, next);
+      return next;
+    });
     showToast('Borrador eliminado');
     navigateTo('lista');
+
+    deleteUserQuote(user.uid, quoteId).then((ok) => {
+      if (!ok) setFirestoreErr(true);
+    });
   };
 
   const handleClearExamples = () => {
-    setAppState((prev) => ({
-      ...prev,
-      quotes: prev.quotes.filter((q) => !q.example),
-    }));
+    if (!user) return;
+    const exampleIds = quotes.filter((q) => q.example).map((q) => q.id);
+    setQuotes((prev) => {
+      const next = prev.filter((q) => !q.example);
+      saveUserLocalCache(user.uid, next);
+      return next;
+    });
     showToast('Ejemplos borrados');
     if (currentTab === 'det' && selectedQuoteId) {
-      const exists = appState.quotes.some((q) => q.id === selectedQuoteId && !q.example);
+      const exists = quotes.some((q) => q.id === selectedQuoteId && !q.example);
       if (!exists) navigateTo('hoy');
     }
+
+    clearUserExampleQuotes(user.uid, exampleIds).then((ok) => {
+      if (!ok) setFirestoreErr(true);
+    });
+  };
+
+  const handleLoadExamples = () => {
+    if (!user) return;
+    const demo = seed();
+    setQuotes(demo.quotes);
+    saveUserLocalCache(user.uid, demo.quotes);
+    showToast('Presupuestos de ejemplo cargados');
+
+    seedUserQuotes(user.uid, demo.quotes).then((ok) => {
+      if (!ok) setFirestoreErr(true);
+    });
   };
 
   const handleRestoreBackup = (restoredState: AppState) => {
-    setAppState(restoredState);
+    if (!user) return;
+    setQuotes(restoredState.quotes);
+    setSettings(restoredState.settings);
+    saveUserLocalCache(user.uid, restoredState.quotes, restoredState.settings);
     showToast('Copia restaurada');
     navigateTo('hoy');
+
+    seedUserQuotes(user.uid, restoredState.quotes).catch(() => {});
+    saveUserSettings(user.uid, restoredState.settings).catch(() => {});
   };
 
   const handleUpdateSettings = (newSettings: Settings) => {
-    setAppState((prev) => ({ ...prev, settings: newSettings }));
+    if (!user) return;
+    setSettings(newSettings);
+    saveUserLocalCache(user.uid, quotes, newSettings);
+
+    saveUserSettings(user.uid, newSettings).then((ok) => {
+      if (!ok) setFirestoreErr(true);
+    });
   };
 
-  const hasExamples = appState.quotes.some((q) => q.example);
-  const selectedQuote = selectedQuoteId
-    ? appState.quotes.find((q) => q.id === selectedQuoteId)
-    : null;
+  // If Firebase Auth is still determining auth state
+  if (authLoading) {
+    return (
+      <div
+        style={{
+          minHeight: '80vh',
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+          justifyContent: 'center',
+          gap: '12px',
+        }}
+      >
+        <div className="brand" style={{ fontSize: '2rem' }}>
+          Presu<span>Follow</span>
+        </div>
+        <p className="hint">Iniciando aplicación...</p>
+      </div>
+    );
+  }
+
+  // GATE: If user is not authenticated, strictly show the AuthScreen
+  if (!user) {
+    return (
+      <div className="wrap">
+        <AuthScreen onSuccessToast={showToast} />
+        <Toast message={toastMsg} />
+      </div>
+    );
+  }
+
+  // Once authenticated, build AppState view representation
+  const appState: AppState = {
+    v: 1,
+    settings,
+    quotes,
+  };
+
+  const hasExamples = quotes.some((q) => q.example);
+  const selectedQuote = selectedQuoteId ? quotes.find((q) => q.id === selectedQuoteId) : null;
 
   return (
     <div className="wrap">
       <Header
         currentTab={currentTab}
         dueCount={dueCount}
+        user={user}
         onSelectTab={(tab) => navigateTo(tab)}
         onNewQuote={handleNewQuote}
+        onOpenAuth={() => setIsAuthModalOpen(true)}
+        onLogout={handleLogout}
       />
 
       <Banner
         hasExamples={hasExamples}
-        saveErr={saveErr}
+        saveErr={firestoreErr}
+        quotesCount={quotes.length}
         onClearExamples={handleClearExamples}
+        onLoadExamples={handleLoadExamples}
       />
 
-      <main>
-        {currentTab === 'hoy' && (
-          <HoyView
-            quotes={appState.quotes}
-            settings={appState.settings}
-            onOpenQuote={(id) => navigateTo('det', id)}
-            onNewQuote={handleNewQuote}
-            onCopyText={copyText}
-            onFollowUpDone={handleFollowUpDone}
-          />
-        )}
-
-        {currentTab === 'lista' && (
-          <ListaView
-            quotes={appState.quotes}
-            currentFilter={listFilter}
-            searchQuery={searchQuery}
-            onSelectFilter={setListFilter}
-            onSearchChange={setSearchQuery}
-            onOpenQuote={(id) => navigateTo('det', id)}
-          />
-        )}
-
-        {currentTab === 'stats' && <EstadisticasView quotes={appState.quotes} />}
-
-        {currentTab === 'ajustes' && (
-          <AjustesView
-            appState={appState}
-            onUpdateSettings={handleUpdateSettings}
-            onRestoreBackup={handleRestoreBackup}
-            onCopyText={copyText}
-            onShowToast={showToast}
-          />
-        )}
-
-        {currentTab === 'edit' && editFormData && (
-          <EditView
-            initialData={editFormData}
-            existingQuotes={appState.quotes}
-            settings={appState.settings}
-            onSave={handleSaveEdit}
-            onCancel={() =>
-              navigateTo(selectedQuoteId ? 'det' : 'lista', selectedQuoteId)
-            }
-          />
-        )}
-
-        {currentTab === 'det' && (
-          selectedQuote ? (
-            <DetalleView
-              quote={selectedQuote}
-              settings={appState.settings}
-              onBack={() => navigateTo('lista')}
-              onEditDraft={handleEditDraft}
-              onDuplicate={handleDuplicateQuote}
-              onDeleteDraft={handleDeleteDraft}
-              onCancelQuote={handleCancelQuote}
-              onPauseResume={handlePauseResume}
-              onResolve={handleResolve}
-              onMarkSent={handleMarkSent}
-              onFollowUpDone={handleFollowUpDone}
+      {dataLoading && quotes.length === 0 ? (
+        <div style={{ padding: '40px 0', textAlign: 'center' }}>
+          <p className="hint">Cargando tus datos de Firebase...</p>
+        </div>
+      ) : (
+        <main>
+          {currentTab === 'hoy' && (
+            <HoyView
+              quotes={quotes}
+              settings={settings}
+              onOpenQuote={(id) => navigateTo('det', id)}
+              onNewQuote={handleNewQuote}
               onCopyText={copyText}
+              onFollowUpDone={handleFollowUpDone}
             />
-          ) : (
-            <div className="empty">
-              <p>No se encuentra este presupuesto.</p>
-              <button
-                type="button"
-                className="btn btn-quiet sm"
-                style={{ marginTop: '10px' }}
-                onClick={() => navigateTo('lista')}
-              >
-                ← Volver a presupuestos
-              </button>
-            </div>
-          )
-        )}
-      </main>
+          )}
+
+          {currentTab === 'lista' && (
+            <ListaView
+              quotes={quotes}
+              currentFilter={listFilter}
+              searchQuery={searchQuery}
+              onSelectFilter={setListFilter}
+              onSearchChange={setSearchQuery}
+              onOpenQuote={(id) => navigateTo('det', id)}
+            />
+          )}
+
+          {currentTab === 'stats' && <EstadisticasView quotes={quotes} />}
+
+          {currentTab === 'ajustes' && (
+            <AjustesView
+              appState={appState}
+              user={user}
+              onUpdateSettings={handleUpdateSettings}
+              onRestoreBackup={handleRestoreBackup}
+              onCopyText={copyText}
+              onShowToast={showToast}
+              onOpenAuth={() => setIsAuthModalOpen(true)}
+              onLogout={handleLogout}
+            />
+          )}
+
+          {currentTab === 'edit' && editFormData && (
+            <EditView
+              initialData={editFormData}
+              existingQuotes={quotes}
+              settings={settings}
+              onSave={handleSaveEdit}
+              onCancel={() =>
+                navigateTo(selectedQuoteId ? 'det' : 'lista', selectedQuoteId)
+              }
+            />
+          )}
+
+          {currentTab === 'det' && (
+            selectedQuote ? (
+              <DetalleView
+                quote={selectedQuote}
+                settings={settings}
+                onBack={() => navigateTo('lista')}
+                onEditDraft={handleEditDraft}
+                onDuplicate={handleDuplicateQuote}
+                onDeleteDraft={handleDeleteDraft}
+                onCancelQuote={handleCancelQuote}
+                onPauseResume={handlePauseResume}
+                onResolve={handleResolve}
+                onMarkSent={handleMarkSent}
+                onFollowUpDone={handleFollowUpDone}
+                onCopyText={copyText}
+              />
+            ) : (
+              <div className="empty">
+                <p>No se encuentra este presupuesto.</p>
+                <button
+                  type="button"
+                  className="btn btn-quiet sm"
+                  style={{ marginTop: '10px' }}
+                  onClick={() => navigateTo('lista')}
+                >
+                  ← Volver a presupuestos
+                </button>
+              </div>
+            )
+          )}
+        </main>
+      )}
 
       <footer className="foot">
-        Los datos se guardan solo en este navegador. Haz una copia de seguridad en Ajustes antes de cambiar de dispositivo o borrar los datos del navegador.
+        Conectado como <strong>{user.email || user.displayName}</strong>.
       </footer>
+
+      <AuthModal
+        isOpen={isAuthModalOpen}
+        onClose={() => setIsAuthModalOpen(false)}
+        onSuccessToast={showToast}
+      />
 
       <Toast message={toastMsg} />
     </div>
   );
 };
+
+export const App: React.FC = () => {
+  return (
+    <AuthProvider>
+      <MainApp />
+    </AuthProvider>
+  );
+};
+
 export default App;

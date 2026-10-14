@@ -1,0 +1,54 @@
+{
+  "entities": {
+    "Settings": {
+      "title": "Settings",
+      "description": "User business and follow-up configuration",
+      "type": "object",
+      "properties": {
+        "negocio": { "type": "string", "maxLength": 128 },
+        "telefono": { "type": "string", "maxLength": 32 },
+        "iva": { "type": "number" },
+        "dias": { "type": "array" },
+        "condiciones": { "type": "string", "maxLength": 2048 }
+      },
+      "required": ["negocio", "iva", "dias"]
+    },
+    "Quote": {
+      "title": "Quote",
+      "description": "Commercial proposal and quote document",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "num": { "type": "string", "maxLength": 32 },
+        "cliente": { "type": "string", "maxLength": 128 },
+        "telefono": { "type": "string", "maxLength": 32 },
+        "email": { "type": "string", "maxLength": 128 },
+        "titulo": { "type": "string", "maxLength": 256 },
+        "estado": { "type": "string", "enum": ["borrador", "enviado", "aceptado", "rechazado", "cancelado"] },
+        "emision": { "type": "string", "maxLength": 10 },
+        "validez": { "type": "string", "maxLength": 10 },
+        "enviado": { "type": "string" },
+        "pausa": { "type": "boolean" },
+        "resuelto": { "type": "string" },
+        "motivo": { "type": "string" },
+        "nota": { "type": "string" },
+        "notas": { "type": "string" },
+        "condiciones": { "type": "string" },
+        "lineas": { "type": "array" },
+        "seg": { "type": "array" },
+        "hist": { "type": "array" }
+      },
+      "required": ["id", "num", "cliente", "titulo", "estado", "lineas"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}/settings/config": {
+      "schema": "Settings",
+      "description": "User business configuration and defaults"
+    },
+    "/users/{userId}/quotes/{quoteId}": {
+      "schema": "Quote",
+      "description": "User commercial quotes and proposals"
+    }
+  }
+}

@@ -1,21 +1,28 @@
 import React, { useState } from 'react';
+import { User } from 'firebase/auth';
 import { AppState, Settings } from '../types';
 import { IVAS } from '../utils/calc';
 
 interface AjustesViewProps {
   appState: AppState;
+  user: User | null;
   onUpdateSettings: (newSettings: Settings) => void;
   onRestoreBackup: (restoredState: AppState) => void;
   onCopyText: (text: string, toastMsg?: string) => void;
   onShowToast: (msg: string) => void;
+  onOpenAuth: () => void;
+  onLogout: () => void;
 }
 
 export const AjustesView: React.FC<AjustesViewProps> = ({
   appState,
+  user,
   onUpdateSettings,
   onRestoreBackup,
   onCopyText,
   onShowToast,
+  onOpenAuth,
+  onLogout,
 }) => {
   const settings = appState.settings;
 
@@ -68,6 +75,63 @@ export const AjustesView: React.FC<AjustesViewProps> = ({
       </div>
 
       <div className="stack">
+        {/* Cuenta y autenticación Firebase */}
+        <section className="card">
+          <h3>Cuenta y autenticación Firebase</h3>
+          {user ? (
+            <div className="stack" style={{ gap: '10px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                <div
+                  style={{
+                    width: '40px',
+                    height: '40px',
+                    borderRadius: '50%',
+                    background: 'var(--accent-soft)',
+                    color: 'var(--accent)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    fontWeight: 700,
+                    fontSize: '1.1rem',
+                  }}
+                >
+                  {(user.displayName || user.email || 'U').charAt(0).toUpperCase()}
+                </div>
+                <div>
+                  <div style={{ fontWeight: 600 }}>
+                    {user.displayName || 'Usuario registrado'}
+                  </div>
+                  <div className="sub muted" style={{ fontSize: '0.86rem' }}>
+                    {user.email} · Proveedor: {user.providerData[0]?.providerId === 'google.com' ? 'Google' : 'Correo y contraseña'}
+                  </div>
+                </div>
+              </div>
+              <div className="btnrow" style={{ marginTop: '4px' }}>
+                <button
+                  type="button"
+                  className="btn btn-quiet sm"
+                  onClick={onLogout}
+                >
+                  Cerrar sesión
+                </button>
+              </div>
+            </div>
+          ) : (
+            <div>
+              <p className="hint" style={{ marginBottom: '12px' }}>
+                Puedes probar el inicio de sesión o registro tanto con tu cuenta de Google como con correo y contraseña.
+              </p>
+              <button
+                type="button"
+                className="btn btn-primary sm"
+                onClick={onOpenAuth}
+              >
+                Iniciar sesión o registrarse
+              </button>
+            </div>
+          )}
+        </section>
+
         {/* Tu negocio */}
         <section className="card">
           <h3>Tu negocio</h3>
@@ -223,7 +287,7 @@ export const AjustesView: React.FC<AjustesViewProps> = ({
             <li>No genera PDF ni un enlace público para que el cliente acepte o rechace.</li>
             <li>No envía correos ni mensajes por sí sola: tú los envías y lo marcas.</li>
             <li>No avisa fuera de la aplicación; hay que abrirla cada día.</li>
-            <li>Los datos viven en un solo navegador.</li>
+            <li>Los datos viven en este navegador hasta que actives la sincronización con Firestore.</li>
           </ul>
         </section>
       </div>
