@@ -4,12 +4,24 @@
   "description": "PresuFollow - Seguimiento y gestión de presupuestos comerciales",
   "type": "module",
   "scripts": {
-    "dev": "node server.js",
-    "start": "node server.js",
-    "build": "node -e \"console.log('Build complete')\"",
-    "lint": "node -e \"console.log('Lint passed')\""
+    "dev": "vite --host 0.0.0.0 --port 3000",
+    "build": "vite build",
+    "preview": "vite preview --host 0.0.0.0 --port 3000",
+    "lint": "tsc --noEmit"
   },
   "dependencies": {
-    "express": "^4.21.2"
+    "firebase": "^13.0.0",
+    "lucide-react": "^1.57.0",
+    "react": "^19.3.0",
+    "react-dom": "^19.3.0"
+  },
+  "devDependencies": {
+    "@tailwindcss/vite": "^4.3.3",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "@vitejs/plugin-react": "^6.1.2",
+    "tailwindcss": "^4.3.3",
+    "typescript": "^7.0.2",
+    "vite": "^8.3.4"
   }
 }
