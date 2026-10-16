@@ -39,9 +39,30 @@
         "hist": { "type": "array" }
       },
       "required": ["id", "num", "cliente", "titulo", "estado", "lineas"]
+    },
+    "UserProfile": {
+      "title": "UserProfile",
+      "description": "User profile with 14-day trial and subscription details",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "email": { "type": "string" },
+        "displayName": { "type": "string" },
+        "createdAt": { "type": "string" },
+        "trialStartedAt": { "type": "string" },
+        "trialEndsAt": { "type": "string" },
+        "trialStatus": { "type": "string", "enum": ["active", "expired"] },
+        "subscriptionStatus": { "type": "string", "enum": ["none", "active", "canceled", "past_due"] },
+        "planId": { "type": "string" }
+      },
+      "required": ["userId", "trialStartedAt", "trialEndsAt", "trialStatus", "subscriptionStatus"]
     }
   },
   "firestore": {
+    "/users/{userId}": {
+      "schema": "UserProfile",
+      "description": "User profile, trial duration and subscription status"
+    },
     "/users/{userId}/settings/config": {
       "schema": "Settings",
       "description": "User business configuration and defaults"

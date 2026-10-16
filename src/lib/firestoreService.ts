@@ -1,12 +1,16 @@
 import {
   collection,
   doc,
+  getDoc,
   setDoc,
   deleteDoc,
   onSnapshot,
   writeBatch,
+  Timestamp,
 } from 'firebase/firestore';
-import { Quote, Settings } from '../types';
+import { User } from 'firebase/auth';
+import { Quote, Settings, UserSubscriptionProfile } from '../types';
+import { calculateTrialDates } from '../utils/trial';
 import { auth, db } from './firebase';
 
 export enum OperationType {
@@ -173,3 +177,128 @@ export async function clearUserExampleQuotes(userId: string, exampleQuoteIds: st
     return false;
   }
 }
+
+/**
+ * Normalizes document data into a UserSubscriptionProfile
+ */
+export function parseSubscriptionProfileDoc(data: Record<string, unknown>, userId: string): UserSubscriptionProfile {
+  let trialStartedAtIso = new Date().toISOString();
+  if (data.trialStartedAt instanceof Timestamp) {
+    trialStartedAtIso = data.trialStartedAt.toDate().toISOString();
+  } else if (typeof data.trialStartedAtIso === 'string') {
+    trialStartedAtIso = data.trialStartedAtIso;
+  } else if (typeof data.trialStartedAt === 'string') {
+    trialStartedAtIso = data.trialStartedAt;
+  }
+
+  let trialEndsAtIso = new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString();
+  if (data.trialEndsAt instanceof Timestamp) {
+    trialEndsAtIso = data.trialEndsAt.toDate().toISOString();
+  } else if (typeof data.trialEndsAtIso === 'string') {
+    trialEndsAtIso = data.trialEndsAtIso;
+  } else if (typeof data.trialEndsAt === 'string') {
+    trialEndsAtIso = data.trialEndsAt;
+  }
+
+  const subscriptionStatus = (data.subscriptionStatus as string) || 'none';
+  const isExpired = Date.now() >= new Date(trialEndsAtIso).getTime();
+
+  return {
+    userId,
+    email: (data.email as string) || null,
+    displayName: (data.displayName as string) || null,
+    createdAt: (data.createdAt as string) || trialStartedAtIso,
+    trialStartedAt: trialStartedAtIso,
+    trialEndsAt: trialEndsAtIso,
+    trialStatus: isExpired ? 'expired' : 'active',
+    subscriptionStatus: subscriptionStatus as UserSubscriptionProfile['subscriptionStatus'],
+    planId: (data.planId as string) || null,
+  };
+}
+
+/**
+ * Ensures a user subscription profile document exists at /users/{userId}.
+ * If it already exists, it is loaded without modifying any dates.
+ * If it does not exist, a new 14-day trial is registered using the authoritative
+ * account creation time, preventing unauthorized resets.
+ */
+export async function ensureUserSubscriptionProfile(user: User): Promise<UserSubscriptionProfile | null> {
+  const path = `users/${user.uid}`;
+  try {
+    const userDocRef = doc(db, 'users', user.uid);
+    const snap = await getDoc(userDocRef);
+
+    if (snap.exists()) {
+      return parseSubscriptionProfileDoc(snap.data() as Record<string, unknown>, user.uid);
+    }
+
+    // Account creation date from Firebase Auth metadata
+    const { createdAt, trialStartedAt, trialEndsAt } = calculateTrialDates(
+      user.metadata.creationTime,
+      new Date()
+    );
+
+    const isExpired = Date.now() >= new Date(trialEndsAt).getTime();
+
+    const profileData = {
+      userId: user.uid,
+      email: user.email || null,
+      displayName: user.displayName || null,
+      createdAt,
+      trialStartedAt: Timestamp.fromDate(new Date(trialStartedAt)),
+      trialStartedAtIso: trialStartedAt,
+      trialEndsAt: Timestamp.fromDate(new Date(trialEndsAt)),
+      trialEndsAtIso: trialEndsAt,
+      trialStatus: isExpired ? 'expired' : 'active',
+      subscriptionStatus: 'none',
+      planId: null,
+    };
+
+    // Use { merge: false } to guarantee idempotency and avoid resetting existing fields
+    await setDoc(userDocRef, profileData, { merge: false });
+
+    return {
+      userId: user.uid,
+      email: user.email || null,
+      displayName: user.displayName || null,
+      createdAt,
+      trialStartedAt,
+      trialEndsAt,
+      trialStatus: isExpired ? 'expired' : 'active',
+      subscriptionStatus: 'none',
+      planId: null,
+    };
+  } catch (error) {
+    handleFirestoreError(error, OperationType.WRITE, path);
+    return null;
+  }
+}
+
+/**
+ * Subscribes in real time to the user profile and subscription document /users/{userId}
+ */
+export function subscribeToUserSubscription(
+  userId: string,
+  onUpdate: (profile: UserSubscriptionProfile | null) => void,
+  onError?: (err: FirestoreErrorInfo) => void
+) {
+  const path = `users/${userId}`;
+  const userDocRef = doc(db, 'users', userId);
+
+  return onSnapshot(
+    userDocRef,
+    (snapshot) => {
+      if (snapshot.exists()) {
+        const profile = parseSubscriptionProfileDoc(snapshot.data() as Record<string, unknown>, userId);
+        onUpdate(profile);
+      } else {
+        onUpdate(null);
+      }
+    },
+    (error) => {
+      const info = handleFirestoreError(error, OperationType.GET, path);
+      onError?.(info);
+    }
+  );
+}
+

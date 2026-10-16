@@ -2,10 +2,20 @@ import React, { useState } from 'react';
 import { useAuth } from '../context/AuthContext';
 
 interface AuthScreenProps {
+  initialMode?: 'login' | 'register' | 'forgot';
   onSuccessToast?: (msg: string) => void;
+  onNavigateLanding?: () => void;
+  onSuccessAuth?: () => void;
+  onModeChange?: (mode: 'login' | 'register' | 'forgot') => void;
 }
 
-export const AuthScreen: React.FC<AuthScreenProps> = ({ onSuccessToast }) => {
+export const AuthScreen: React.FC<AuthScreenProps> = ({
+  initialMode = 'login',
+  onSuccessToast,
+  onNavigateLanding,
+  onSuccessAuth,
+  onModeChange,
+}) => {
   const {
     loginWithEmail,
     registerWithEmail,
@@ -14,13 +24,27 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onSuccessToast }) => {
     getFriendlyErrorMessage,
   } = useAuth();
 
-  const [mode, setMode] = useState<'login' | 'register' | 'forgot'>('login');
+  const [mode, setMode] = useState<'login' | 'register' | 'forgot'>(initialMode);
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [infoMsg, setInfoMsg] = useState<string | null>(null);
+
+  React.useEffect(() => {
+    if (initialMode && initialMode !== mode) {
+      setMode(initialMode);
+      setErrorMsg(null);
+      setInfoMsg(null);
+    }
+  }, [initialMode]);
+
+  const changeMode = (newMode: 'login' | 'register' | 'forgot') => {
+    setMode(newMode);
+    resetState();
+    onModeChange?.(newMode);
+  };
 
   const resetState = () => {
     setErrorMsg(null);
@@ -33,6 +57,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onSuccessToast }) => {
     try {
       await loginWithGoogle();
       onSuccessToast?.('Sesión iniciada con Google');
+      onSuccessAuth?.();
     } catch (err: unknown) {
       const code = (err as { code?: string })?.code || '';
       setErrorMsg(getFriendlyErrorMessage(code));
@@ -60,9 +85,11 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onSuccessToast }) => {
       if (mode === 'login') {
         await loginWithEmail(email, password);
         onSuccessToast?.('Sesión iniciada correctamente');
+        onSuccessAuth?.();
       } else if (mode === 'register') {
         await registerWithEmail(email, password, name);
         onSuccessToast?.('Cuenta creada con éxito');
+        onSuccessAuth?.();
       } else if (mode === 'forgot') {
         await resetPassword(email);
         setInfoMsg('Hemos enviado un enlace de recuperación a tu correo electrónico.');
@@ -86,6 +113,19 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onSuccessToast }) => {
         padding: '24px 16px',
       }}
     >
+      {onNavigateLanding && (
+        <div style={{ width: '100%', maxWidth: '430px', marginBottom: '12px' }}>
+          <button
+            type="button"
+            className="btn btn-quiet sm"
+            onClick={onNavigateLanding}
+            style={{ padding: '4px 0', display: 'inline-flex', alignItems: 'center', gap: '6px' }}
+          >
+            ← Volver a PresuFollow
+          </button>
+        </div>
+      )}
+
       <div style={{ textAlign: 'center', marginBottom: '28px', maxWidth: '440px' }}>
         <div className="brand" style={{ fontSize: '2.2rem', marginBottom: '6px' }}>
           Presu<span>Follow</span>
@@ -132,10 +172,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onSuccessToast }) => {
               className="tab"
               aria-current={mode === 'login' ? 'page' : undefined}
               style={{ padding: '8px 14px', fontSize: '0.92rem', flex: 1, justifyContent: 'center' }}
-              onClick={() => {
-                setMode('login');
-                resetState();
-              }}
+              onClick={() => changeMode('login')}
             >
               Iniciar sesión
             </button>
@@ -144,10 +181,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onSuccessToast }) => {
               className="tab"
               aria-current={mode === 'register' ? 'page' : undefined}
               style={{ padding: '8px 14px', fontSize: '0.92rem', flex: 1, justifyContent: 'center' }}
-              onClick={() => {
-                setMode('register');
-                resetState();
-              }}
+              onClick={() => changeMode('register')}
             >
               Registrarse
             </button>
@@ -320,10 +354,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onSuccessToast }) => {
               <button
                 type="button"
                 className="btn btn-quiet sm"
-                onClick={() => {
-                  setMode('login');
-                  resetState();
-                }}
+                onClick={() => changeMode('login')}
               >
                 ← Volver a inicio de sesión
               </button>

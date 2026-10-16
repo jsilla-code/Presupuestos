@@ -1,25 +1,31 @@
 import React from 'react';
 import { User } from 'firebase/auth';
-import { TabView } from '../types';
+import { TabView, TrialStateInfo } from '../types';
 
 interface HeaderProps {
   currentTab: TabView;
   dueCount: number;
   user: User | null;
+  trialState?: TrialStateInfo | null;
   onSelectTab: (tab: TabView) => void;
   onNewQuote: () => void;
   onOpenAuth: () => void;
   onLogout: () => void;
+  onNavigateLanding?: () => void;
+  onOpenSubscription?: () => void;
 }
 
 export const Header: React.FC<HeaderProps> = ({
   currentTab,
   dueCount,
   user,
+  trialState,
   onSelectTab,
   onNewQuote,
   onOpenAuth,
   onLogout,
+  onNavigateLanding,
+  onOpenSubscription,
 }) => {
   const activeTab = currentTab === 'det' || currentTab === 'edit' ? 'lista' : currentTab;
 
@@ -85,6 +91,72 @@ export const Header: React.FC<HeaderProps> = ({
               onClick={onOpenAuth}
             >
               Iniciar sesión
+            </button>
+          )}
+
+          {/* Trial & Subscription Badge */}
+          {user && trialState && (
+            <button
+              type="button"
+              onClick={onOpenSubscription}
+              style={{
+                background: 'none',
+                border: 0,
+                padding: 0,
+                cursor: 'pointer',
+                display: 'inline-flex',
+                alignItems: 'center',
+              }}
+              title="Información de prueba y suscripción"
+            >
+              {trialState.hasSubscription ? (
+                <span className="chip chip-aceptado" style={{ fontSize: '0.78rem', padding: '3px 8px' }}>
+                  Plan Profesional
+                </span>
+              ) : trialState.isExpired ? (
+                <span
+                  className="chip chip-rechazado"
+                  style={{ fontSize: '0.78rem', padding: '3px 8px', fontWeight: 700 }}
+                >
+                  Prueba vencida
+                </span>
+              ) : trialState.badgeType === 'trial_last_day' ? (
+                <span
+                  className="chip chip-vencido"
+                  style={{ fontSize: '0.78rem', padding: '3px 8px', fontWeight: 700 }}
+                >
+                  Último día
+                </span>
+              ) : trialState.badgeType === 'trial_ending_soon' ? (
+                <span className="chip chip-vencido" style={{ fontSize: '0.78rem', padding: '3px 8px' }}>
+                  Prueba: {trialState.daysRemaining}d
+                </span>
+              ) : (
+                <span
+                  className="chip"
+                  style={{
+                    background: 'var(--surface-2)',
+                    border: '1px solid var(--line)',
+                    color: 'var(--ink)',
+                    fontSize: '0.78rem',
+                    padding: '3px 8px',
+                  }}
+                >
+                  Prueba: {trialState.daysRemaining}d
+                </span>
+              )}
+            </button>
+          )}
+
+          {onNavigateLanding && (
+            <button
+              type="button"
+              className="btn btn-quiet sm"
+              onClick={onNavigateLanding}
+              title="Ver landing comercial"
+              style={{ fontSize: '0.84rem' }}
+            >
+              Web
             </button>
           )}
 

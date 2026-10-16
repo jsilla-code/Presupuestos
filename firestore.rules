@@ -1,21 +1,65 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    // Default deny
+    // Default deny for unauthorized paths
     match /{document=**} {
       allow read, write: if false;
     }
 
-    // User data is strictly isolated to the authenticated owner
-    match /users/{userId} {
-      allow read, write: if request.auth != null && request.auth.uid == userId;
+    // Helper: checks whether user has active access (either active subscription or active 14-day trial)
+    function hasActiveAccess(userId) {
+      let userDoc = get(/databases/$(database)/documents/users/$(userId));
+      return userDoc != null && (
+        userDoc.data.subscriptionStatus == 'active' ||
+        (
+          userDoc.data.trialEndsAt is timestamp &&
+          request.time < userDoc.data.trialEndsAt
+        )
+      );
+    }
 
+    match /users/{userId} {
+      // 1. Reading profile: user can only read their own profile
+      allow read: if request.auth != null && request.auth.uid == userId;
+
+      // 2. Creating profile (initial registration):
+      // - Must be the authenticated user
+      // - subscriptionStatus MUST be 'none' (cannot self-grant subscriptions)
+      // - planId must be null
+      // - trialEndsAt must be a timestamp and cannot exceed 14 days from request.time (with 1h clock buffer)
+      allow create: if request.auth != null && request.auth.uid == userId
+        && request.resource.data.userId == userId
+        && request.resource.data.subscriptionStatus == 'none'
+        && (!('planId' in request.resource.data) || request.resource.data.planId == null)
+        && request.resource.data.trialEndsAt is timestamp
+        && request.resource.data.trialEndsAt <= request.time + duration.value(14, 'd') + duration.value(1, 'h');
+
+      // 3. Updating profile:
+      // The client cannot alter trial dates, subscription status, or plan.
+      // Those can only remain identical to current values or be updated by trusted server/admin.
+      allow update: if request.auth != null && request.auth.uid == userId
+        && request.resource.data.trialStartedAt == resource.data.trialStartedAt
+        && request.resource.data.trialEndsAt == resource.data.trialEndsAt
+        && request.resource.data.subscriptionStatus == resource.data.subscriptionStatus
+        && request.resource.data.planId == resource.data.planId;
+
+      // 4. Deleting profile is denied so trial cannot be restarted
+      allow delete: if false;
+
+      // Settings subcollection:
+      // Reading: allowed for owner at all times (even if trial expired, to read their config)
+      // Writing/Updating: allowed ONLY if user has active trial or active subscription!
       match /settings/{docId} {
-        allow read, write: if request.auth != null && request.auth.uid == userId;
+        allow read: if request.auth != null && request.auth.uid == userId;
+        allow write: if request.auth != null && request.auth.uid == userId && hasActiveAccess(userId);
       }
 
+      // Quotes subcollection:
+      // Reading: allowed for owner at all times (user preserves complete visibility of their existing quotes)
+      // Creating, updating, deleting: allowed ONLY if user has active trial or active subscription!
       match /quotes/{quoteId} {
-        allow read, write: if request.auth != null && request.auth.uid == userId;
+        allow read: if request.auth != null && request.auth.uid == userId;
+        allow create, update, delete: if request.auth != null && request.auth.uid == userId && hasActiveAccess(userId);
       }
     }
   }

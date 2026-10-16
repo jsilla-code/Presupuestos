@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { AjustesView } from './components/AjustesView';
 import { AuthModal } from './components/AuthModal';
 import { AuthScreen } from './components/AuthScreen';
@@ -8,22 +8,27 @@ import { EditFormData, EditView, createNewEditData } from './components/EditView
 import { EstadisticasView } from './components/EstadisticasView';
 import { Header } from './components/Header';
 import { HoyView } from './components/HoyView';
+import { LandingPage } from './components/LandingPage';
 import { ListaView } from './components/ListaView';
+import { SubscriptionModal } from './components/SubscriptionModal';
 import { Toast } from './components/Toast';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import {
   clearUserExampleQuotes,
   deleteUserQuote,
+  ensureUserSubscriptionProfile,
   saveUserQuote,
   saveUserSettings,
   seedUserQuotes,
   subscribeToUserQuotes,
   subscribeToUserSettings,
+  subscribeToUserSubscription,
 } from './lib/firestoreService';
-import { AppState, ListFilter, Quote, Settings, TabView } from './types';
+import { AppState, ListFilter, Quote, Settings, TabView, TrialStateInfo, UserSubscriptionProfile } from './types';
 import { nextNum, uid } from './utils/calc';
 import { addDays, isVencido, nextFu, pad, today } from './utils/date';
 import { seed } from './utils/storage';
+import { computeTrialState } from './utils/trial';
 
 const defaultFallbackSettings: Settings = {
   negocio: 'Mi Negocio',
@@ -37,6 +42,33 @@ const MainApp: React.FC = () => {
   const { user, loading: authLoading, logout } = useAuth();
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
 
+  // URL Path-based SPA Navigation without page reloads
+  const getInitialRoute = (): string => {
+    const path = window.location.pathname.toLowerCase();
+    if (path === '/app' || path === '/app/') return '/app';
+    if (path === '/login' || path === '/login/') return '/login';
+    if (path === '/register' || path === '/register/') return '/register';
+    return '/';
+  };
+
+  const [route, setRoute] = useState<string>(getInitialRoute);
+
+  const navigateRoute = (newRoute: string) => {
+    if (window.location.pathname !== newRoute) {
+      window.history.pushState({}, '', newRoute);
+    }
+    setRoute(newRoute);
+    window.scrollTo(0, 0);
+  };
+
+  useEffect(() => {
+    const onPopState = () => {
+      setRoute(getInitialRoute());
+    };
+    window.addEventListener('popstate', onPopState);
+    return () => window.removeEventListener('popstate', onPopState);
+  }, []);
+
   const [quotes, setQuotes] = useState<Quote[]>([]);
   const [settings, setSettings] = useState<Settings>(defaultFallbackSettings);
   const [dataLoading, setDataLoading] = useState(false);
@@ -49,6 +81,38 @@ const MainApp: React.FC = () => {
   const [listFilter, setListFilter] = useState<ListFilter>('todos');
   const [searchQuery, setSearchQuery] = useState('');
   const [toastMsg, setToastMsg] = useState<string | null>(null);
+
+  // Free trial and subscription state
+  const [subscriptionProfile, setSubscriptionProfile] = useState<UserSubscriptionProfile | null>(null);
+  const [isSubscriptionModalOpen, setIsSubscriptionModalOpen] = useState(false);
+  const [subscriptionModalReason, setSubscriptionModalReason] = useState<string | null>(null);
+  const [nowTick, setNowTick] = useState<Date>(() => new Date());
+
+  // Periodically refresh nowTick (every 60s) for live trial countdown
+  useEffect(() => {
+    const timer = window.setInterval(() => {
+      setNowTick(new Date());
+    }, 60000);
+    return () => window.clearInterval(timer);
+  }, []);
+
+  // Compute authoritative trial state from persistent profile
+  const trialState: TrialStateInfo | null = useMemo(() => {
+    if (!subscriptionProfile) return null;
+    return computeTrialState(subscriptionProfile, nowTick);
+  }, [subscriptionProfile, nowTick]);
+
+  // Central access control gate for write operations
+  const ensureActiveAccess = (actionDescription: string): boolean => {
+    if (trialState && trialState.isExpired) {
+      setSubscriptionModalReason(
+        `Tu prueba gratuita de 14 días ha finalizado. Para ${actionDescription}, activa tu suscripción al Plan Profesional.`
+      );
+      setIsSubscriptionModalOpen(true);
+      return false;
+    }
+    return true;
+  };
 
   // Helper to persist user-scoped local fallback cache
   const saveUserLocalCache = (userId: string, userQuotes: Quote[], userSettings?: Settings) => {
@@ -67,6 +131,9 @@ const MainApp: React.FC = () => {
     if (!user) {
       setQuotes([]);
       setSettings(defaultFallbackSettings);
+      setSubscriptionProfile(null);
+      setIsSubscriptionModalOpen(false);
+      setSubscriptionModalReason(null);
       return;
     }
 
@@ -86,6 +153,13 @@ const MainApp: React.FC = () => {
           setSettings(parsedSettings);
         }
       }
+      const cachedSub = localStorage.getItem(`presufollow.user.${user.uid}.subscription`);
+      if (cachedSub) {
+        const parsedSub = JSON.parse(cachedSub);
+        if (parsedSub && parsedSub.trialEndsAt) {
+          setSubscriptionProfile(parsedSub);
+        }
+      }
     } catch {
       // Continue to Firestore
     }
@@ -93,7 +167,30 @@ const MainApp: React.FC = () => {
     setDataLoading(true);
     setFirestoreErr(false);
 
-    // 2. Subscribe to Firestore quotes subcollection for this user
+    // 2. Subscribe to real-time subscription profile /users/{userId}
+    const unsubSub = subscribeToUserSubscription(
+      user.uid,
+      (fetchedProfile) => {
+        if (fetchedProfile) {
+          setSubscriptionProfile(fetchedProfile);
+          try {
+            localStorage.setItem(`presufollow.user.${user.uid}.subscription`, JSON.stringify(fetchedProfile));
+          } catch {}
+        }
+      }
+    );
+
+    // 3. Ensure user profile exists in Firestore (idempotent, derives from user.metadata.creationTime)
+    ensureUserSubscriptionProfile(user).then((initializedProfile) => {
+      if (initializedProfile) {
+        setSubscriptionProfile(initializedProfile);
+        try {
+          localStorage.setItem(`presufollow.user.${user.uid}.subscription`, JSON.stringify(initializedProfile));
+        } catch {}
+      }
+    });
+
+    // 4. Subscribe to Firestore quotes subcollection for this user
     const unsubQuotes = subscribeToUserQuotes(
       user.uid,
       (fetchedQuotes) => {
@@ -108,7 +205,7 @@ const MainApp: React.FC = () => {
       }
     );
 
-    // 3. Subscribe to Firestore settings document for this user
+    // 5. Subscribe to Firestore settings document for this user
     const unsubSettings = subscribeToUserSettings(
       user.uid,
       (fetchedSettings) => {
@@ -135,6 +232,7 @@ const MainApp: React.FC = () => {
     );
 
     return () => {
+      unsubSub();
       unsubQuotes();
       unsubSettings();
     };
@@ -180,6 +278,7 @@ const MainApp: React.FC = () => {
       setCurrentTab('hoy');
       setSelectedQuoteId(null);
       setEditFormData(null);
+      navigateRoute('/');
     } catch {
       showToast('Error al cerrar sesión');
     }
@@ -194,11 +293,13 @@ const MainApp: React.FC = () => {
   }).length;
 
   const handleNewQuote = () => {
+    if (!ensureActiveAccess('crear un nuevo presupuesto')) return;
     setEditFormData(createNewEditData(settings));
     navigateTo('edit');
   };
 
   const handleEditDraft = (q: Quote) => {
+    if (!ensureActiveAccess('editar este borrador')) return;
     setEditFormData({
       id: q.id,
       cliente: q.cliente,
@@ -217,6 +318,7 @@ const MainApp: React.FC = () => {
   // Optimistic Save: Updates state & local cache immediately, then syncs to Firestore in background
   const handleSaveEdit = (data: EditFormData, andSend: boolean) => {
     if (!user) return;
+    if (!ensureActiveAccess('guardar cambios en el presupuesto')) return;
     let targetQuoteId = data.id;
     let quoteToSave: Quote;
 
@@ -304,6 +406,7 @@ const MainApp: React.FC = () => {
 
   const handleDuplicateQuote = (q: Quote) => {
     if (!user) return;
+    if (!ensureActiveAccess('duplicar este presupuesto')) return;
     const dup: Quote = {
       id: uid(),
       num: nextNum(quotes),
@@ -357,6 +460,7 @@ const MainApp: React.FC = () => {
 
   const handleMarkSent = (quoteId: string) => {
     if (!user) return;
+    if (!ensureActiveAccess('marcar este presupuesto como enviado')) return;
     const q = quotes.find((x) => x.id === quoteId);
     if (!q) return;
 
@@ -382,6 +486,7 @@ const MainApp: React.FC = () => {
 
   const handleFollowUpDone = (quoteId: string, stepIndex: number) => {
     if (!user) return;
+    if (!ensureActiveAccess('registrar este seguimiento')) return;
     const q = quotes.find((x) => x.id === quoteId);
     if (!q) return;
 
@@ -411,6 +516,7 @@ const MainApp: React.FC = () => {
 
   const handlePauseResume = (quoteId: string, pause: boolean) => {
     if (!user) return;
+    if (!ensureActiveAccess('pausar o reanudar seguimientos')) return;
     const q = quotes.find((x) => x.id === quoteId);
     if (!q) return;
 
@@ -438,6 +544,7 @@ const MainApp: React.FC = () => {
     nota?: string
   ) => {
     if (!user) return;
+    if (!ensureActiveAccess('actualizar el estado de este presupuesto')) return;
     const q = quotes.find((x) => x.id === quoteId);
     if (!q) return;
 
@@ -469,6 +576,7 @@ const MainApp: React.FC = () => {
 
   const handleCancelQuote = (quoteId: string) => {
     if (!user) return;
+    if (!ensureActiveAccess('cancelar este presupuesto')) return;
     const q = quotes.find((x) => x.id === quoteId);
     if (!q) return;
 
@@ -492,6 +600,7 @@ const MainApp: React.FC = () => {
 
   const handleDeleteDraft = (quoteId: string) => {
     if (!user) return;
+    if (!ensureActiveAccess('eliminar este borrador')) return;
     setQuotes((prev) => {
       const next = prev.filter((q) => q.id !== quoteId);
       saveUserLocalCache(user.uid, next);
@@ -526,6 +635,7 @@ const MainApp: React.FC = () => {
 
   const handleLoadExamples = () => {
     if (!user) return;
+    if (!ensureActiveAccess('cargar presupuestos de ejemplo')) return;
     const demo = seed();
     setQuotes(demo.quotes);
     saveUserLocalCache(user.uid, demo.quotes);
@@ -538,6 +648,7 @@ const MainApp: React.FC = () => {
 
   const handleRestoreBackup = (restoredState: AppState) => {
     if (!user) return;
+    if (!ensureActiveAccess('restaurar una copia de seguridad')) return;
     setQuotes(restoredState.quotes);
     setSettings(restoredState.settings);
     saveUserLocalCache(user.uid, restoredState.quotes, restoredState.settings);
@@ -550,6 +661,7 @@ const MainApp: React.FC = () => {
 
   const handleUpdateSettings = (newSettings: Settings) => {
     if (!user) return;
+    if (!ensureActiveAccess('guardar cambios en los ajustes')) return;
     setSettings(newSettings);
     saveUserLocalCache(user.uid, quotes, newSettings);
 
@@ -579,17 +691,122 @@ const MainApp: React.FC = () => {
     );
   }
 
-  // GATE: If user is not authenticated, strictly show the AuthScreen
-  if (!user) {
+  // ROUTE 1: Landing Page (Commercial presentation at "/")
+  if (route === '/') {
+    return (
+      <>
+        <LandingPage
+          onNavigate={navigateRoute}
+          isAuthenticated={!!user}
+          userEmail={user?.email || user?.displayName}
+        />
+        <Toast message={toastMsg} />
+      </>
+    );
+  }
+
+  // ROUTE 2: Explicit Auth Routes ("/login" or "/register")
+  if (route === '/login' || route === '/register') {
+    if (user) {
+      return (
+        <div
+          className="wrap"
+          style={{
+            minHeight: '80vh',
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: '24px 16px',
+          }}
+        >
+          <div
+            className="card"
+            style={{
+              maxWidth: '430px',
+              width: '100%',
+              textAlign: 'center',
+              padding: '30px 24px',
+              boxShadow: '0 8px 30px rgba(0,0,0,0.08)',
+            }}
+          >
+            <div className="brand" style={{ fontSize: '1.8rem', marginBottom: '8px' }}>
+              Presu<span>Follow</span>
+            </div>
+            <h2 style={{ fontSize: '1.25rem', marginBottom: '6px' }}>Sesión activa</h2>
+            <p className="muted" style={{ marginBottom: '20px', fontSize: '0.92rem' }}>
+              Ya has iniciado sesión como <strong>{user.email || user.displayName}</strong>.
+            </p>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+              <button
+                type="button"
+                className="btn btn-primary"
+                style={{ width: '100%', padding: '10px' }}
+                onClick={() => navigateRoute('/app')}
+              >
+                Entrar a la aplicación
+              </button>
+              <button
+                type="button"
+                className="btn"
+                style={{ width: '100%', padding: '10px' }}
+                onClick={() => navigateRoute('/')}
+              >
+                Volver a la portada comercial
+              </button>
+              <button
+                type="button"
+                className="btn btn-quiet sm"
+                style={{ marginTop: '6px' }}
+                onClick={handleLogout}
+              >
+                Cerrar sesión
+              </button>
+            </div>
+          </div>
+          <Toast message={toastMsg} />
+        </div>
+      );
+    }
+
     return (
       <div className="wrap">
-        <AuthScreen onSuccessToast={showToast} />
+        <AuthScreen
+          initialMode={route === '/register' ? 'register' : 'login'}
+          onSuccessToast={showToast}
+          onNavigateLanding={() => navigateRoute('/')}
+          onSuccessAuth={() => navigateRoute('/app')}
+          onModeChange={(m) => navigateRoute(m === 'register' ? '/register' : '/login')}
+        />
         <Toast message={toastMsg} />
       </div>
     );
   }
 
-  // Once authenticated, build AppState view representation
+  // ROUTE 3: Application Route ("/app" or any fallback when user is not authenticated)
+  if (!user) {
+    return (
+      <div className="wrap">
+        <div style={{ maxWidth: '430px', margin: '20px auto 0', padding: '0 16px' }}>
+          <div className="banner" style={{ marginBottom: 0 }}>
+            <span>
+              Acceso a PresuFollow: Inicia sesión o crea tu cuenta gratuita para acceder a tus presupuestos.
+            </span>
+          </div>
+        </div>
+        <AuthScreen
+          initialMode="login"
+          onSuccessToast={showToast}
+          onNavigateLanding={() => navigateRoute('/')}
+          onSuccessAuth={() => navigateRoute('/app')}
+          onModeChange={(m) => navigateRoute(m === 'register' ? '/register' : '/login')}
+        />
+        <Toast message={toastMsg} />
+      </div>
+    );
+  }
+
+  // Once authenticated on /app, build AppState view representation
   const appState: AppState = {
     v: 1,
     settings,
@@ -605,18 +822,29 @@ const MainApp: React.FC = () => {
         currentTab={currentTab}
         dueCount={dueCount}
         user={user}
+        trialState={trialState}
         onSelectTab={(tab) => navigateTo(tab)}
         onNewQuote={handleNewQuote}
         onOpenAuth={() => setIsAuthModalOpen(true)}
         onLogout={handleLogout}
+        onNavigateLanding={() => navigateRoute('/')}
+        onOpenSubscription={() => {
+          setSubscriptionModalReason(null);
+          setIsSubscriptionModalOpen(true);
+        }}
       />
 
       <Banner
         hasExamples={hasExamples}
         saveErr={firestoreErr}
         quotesCount={quotes.length}
+        trialState={trialState}
         onClearExamples={handleClearExamples}
         onLoadExamples={handleLoadExamples}
+        onOpenSubscription={() => {
+          setSubscriptionModalReason(null);
+          setIsSubscriptionModalOpen(true);
+        }}
       />
 
       {dataLoading && quotes.length === 0 ? (
@@ -653,12 +881,17 @@ const MainApp: React.FC = () => {
             <AjustesView
               appState={appState}
               user={user}
+              trialState={trialState}
               onUpdateSettings={handleUpdateSettings}
               onRestoreBackup={handleRestoreBackup}
               onCopyText={copyText}
               onShowToast={showToast}
               onOpenAuth={() => setIsAuthModalOpen(true)}
               onLogout={handleLogout}
+              onOpenSubscription={(reason) => {
+                setSubscriptionModalReason(reason || null);
+                setIsSubscriptionModalOpen(true);
+              }}
             />
           )}
 
@@ -710,6 +943,16 @@ const MainApp: React.FC = () => {
       <footer className="foot">
         Conectado como <strong>{user.email || user.displayName}</strong>.
       </footer>
+
+      <SubscriptionModal
+        isOpen={isSubscriptionModalOpen}
+        onClose={() => {
+          setIsSubscriptionModalOpen(false);
+          setSubscriptionModalReason(null);
+        }}
+        trialState={trialState}
+        reason={subscriptionModalReason}
+      />
 
       <AuthModal
         isOpen={isAuthModalOpen}

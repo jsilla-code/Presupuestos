@@ -1,35 +1,49 @@
 import React, { useState } from 'react';
 import { User } from 'firebase/auth';
-import { AppState, Settings } from '../types';
+import { AppState, Settings, TrialStateInfo } from '../types';
 import { IVAS } from '../utils/calc';
+import { formatTrialDateTime } from '../utils/trial';
 
 interface AjustesViewProps {
   appState: AppState;
   user: User | null;
+  trialState?: TrialStateInfo | null;
   onUpdateSettings: (newSettings: Settings) => void;
   onRestoreBackup: (restoredState: AppState) => void;
   onCopyText: (text: string, toastMsg?: string) => void;
   onShowToast: (msg: string) => void;
   onOpenAuth: () => void;
   onLogout: () => void;
+  onOpenSubscription?: (reason?: string) => void;
 }
 
 export const AjustesView: React.FC<AjustesViewProps> = ({
   appState,
   user,
+  trialState,
   onUpdateSettings,
   onRestoreBackup,
   onCopyText,
   onShowToast,
   onOpenAuth,
   onLogout,
+  onOpenSubscription,
 }) => {
   const settings = appState.settings;
 
   const [confirmImport, setConfirmImport] = useState(false);
   const [importText, setImportText] = useState('');
 
+  const checkExpired = (): boolean => {
+    if (trialState?.isExpired) {
+      onOpenSubscription?.('Tu prueba gratuita ha finalizado. Para guardar ajustes o importar datos, activa tu suscripción.');
+      return true;
+    }
+    return false;
+  };
+
   const handleFieldChange = (key: keyof Settings, value: string | number) => {
+    if (checkExpired()) return;
     onUpdateSettings({
       ...settings,
       [key]: value,
@@ -38,6 +52,7 @@ export const AjustesView: React.FC<AjustesViewProps> = ({
   };
 
   const handleDayChange = (index: number, valStr: string) => {
+    if (checkExpired()) return;
     const v = parseInt(valStr, 10);
     if (isNaN(v) || v < 1 || v > 90) {
       onShowToast('Introduce un número de días entre 1 y 90');
@@ -54,6 +69,7 @@ export const AjustesView: React.FC<AjustesViewProps> = ({
   };
 
   const handleRestore = () => {
+    if (checkExpired()) return;
     try {
       const parsed = JSON.parse(importText);
       if (!parsed || !Array.isArray(parsed.quotes) || !parsed.settings) {
@@ -128,6 +144,69 @@ export const AjustesView: React.FC<AjustesViewProps> = ({
               >
                 Iniciar sesión o registrarse
               </button>
+            </div>
+          )}
+        </section>
+
+        {/* Suscripción y prueba gratuita */}
+        <section className="card">
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
+            <h3 style={{ margin: 0 }}>Suscripción y prueba gratuita</h3>
+            {trialState && (
+              trialState.hasSubscription ? (
+                <span className="chip chip-aceptado">Plan Profesional</span>
+              ) : trialState.isExpired ? (
+                <span className="chip chip-rechazado">Prueba finalizada</span>
+              ) : trialState.badgeType === 'trial_last_day' ? (
+                <span className="chip chip-vencido">Último día</span>
+              ) : (
+                <span className="chip chip-enviado">Prueba 14 días</span>
+              )
+            )}
+          </div>
+
+          {trialState && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', fontSize: '0.9rem' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid var(--line)', paddingBottom: '6px' }}>
+                <span className="muted">Inicio de la prueba:</span>
+                <span className="num">{formatTrialDateTime(trialState.trialStartedAt)}</span>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid var(--line)', paddingBottom: '6px' }}>
+                <span className="muted">Fin de la prueba:</span>
+                <span className="num">{formatTrialDateTime(trialState.trialEndsAt)}</span>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid var(--line)', paddingBottom: '6px' }}>
+                <span className="muted">Días restantes:</span>
+                <span
+                  className="num"
+                  style={{
+                    fontWeight: 700,
+                    color: trialState.isExpired
+                      ? 'var(--bad)'
+                      : trialState.badgeType === 'trial_ending_soon' || trialState.badgeType === 'trial_last_day'
+                      ? 'var(--warn)'
+                      : 'var(--ok)',
+                  }}
+                >
+                  {trialState.isExpired ? '0 días (vencida)' : `${trialState.daysRemaining} días`}
+                </span>
+              </div>
+              <div style={{ marginTop: '4px', fontSize: '0.86rem', color: 'var(--muted)' }}>
+                {trialState.message}
+              </div>
+              {onOpenSubscription && (
+                <div style={{ marginTop: '8px' }}>
+                  <button
+                    type="button"
+                    className={trialState.isExpired ? 'btn btn-primary sm' : 'btn sm'}
+                    onClick={() => onOpenSubscription()}
+                  >
+                    {trialState.isExpired
+                      ? 'Activar Plan Profesional (12 €/mes)'
+                      : 'Ver detalles del Plan Profesional'}
+                  </button>
+                </div>
+              )}
             </div>
           )}
         </section>

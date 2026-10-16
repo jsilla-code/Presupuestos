@@ -1,24 +1,89 @@
 import React, { useState } from 'react';
+import { TrialStateInfo } from '../types';
 
 interface BannerProps {
   hasExamples: boolean;
   saveErr: boolean;
   quotesCount: number;
+  trialState?: TrialStateInfo | null;
   onClearExamples: () => void;
   onLoadExamples?: () => void;
+  onOpenSubscription?: () => void;
 }
 
 export const Banner: React.FC<BannerProps> = ({
   hasExamples,
   saveErr,
   quotesCount,
+  trialState,
   onClearExamples,
   onLoadExamples,
+  onOpenSubscription,
 }) => {
   const [showFixHelp, setShowFixHelp] = useState(false);
 
   return (
     <>
+      {/* Trial Expired Alert Banner */}
+      {trialState?.isExpired && (
+        <div
+          className="banner"
+          style={{
+            background: 'var(--bad-soft)',
+            color: 'var(--bad)',
+            borderColor: 'var(--bad)',
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            flexWrap: 'wrap',
+            gap: '8px',
+          }}
+        >
+          <span>
+            <strong>Prueba gratuita finalizada:</strong> Puedes consultar todos tus presupuestos creados, pero las funciones de creación y edición están pausadas hasta activar tu suscripción.
+          </span>
+          {onOpenSubscription && (
+            <button
+              type="button"
+              className="btn btn-primary sm"
+              onClick={onOpenSubscription}
+              style={{ whiteSpace: 'nowrap' }}
+            >
+              Activar Plan Profesional (12 €/mes)
+            </button>
+          )}
+        </div>
+      )}
+
+      {/* Trial Ending Soon Warning Banner */}
+      {!trialState?.isExpired &&
+        (trialState?.badgeType === 'trial_ending_soon' || trialState?.badgeType === 'trial_last_day') && (
+          <div
+            className="banner"
+            style={{
+              background: 'var(--warn-soft)',
+              color: 'var(--warn)',
+              borderColor: 'var(--warn)',
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+              flexWrap: 'wrap',
+              gap: '8px',
+            }}
+          >
+            <span>{trialState.message}</span>
+            {onOpenSubscription && (
+              <button
+                type="button"
+                className="btn sm"
+                onClick={onOpenSubscription}
+                style={{ whiteSpace: 'nowrap' }}
+              >
+                Ver detalles
+              </button>
+            )}
+          </div>
+        )}
       {hasExamples && (
         <div className="banner">
           <span>Estás viendo datos de ejemplo para que pruebes la aplicación.</span>

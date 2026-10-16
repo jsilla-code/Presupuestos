@@ -886,3 +886,17 @@ th.r, td.r {
     animation: none !important;
   }
 }
+
+/* Landing Page responsive navigation */
+@media (min-width: 768px) {
+  .desktop-nav {
+    display: flex !important;
+  }
+  .desktop-actions {
+    display: flex !important;
+  }
+  .mobile-menu-btn {
+    display: none !important;
+  }
+}
+

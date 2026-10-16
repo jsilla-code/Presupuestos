@@ -1,6 +1,6 @@
 {
   "name": "PresuFollow",
-  "description": "Herramienta de seguimiento de presupuestos y gestión comercial de propuestas.",
+  "description": "Organiza tus presupuestos, controla su estado y gestiona el seguimiento de tus clientes con PresuFollow",
   "permissions": [],
   "capabilities": [
     "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
