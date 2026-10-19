@@ -56,6 +56,33 @@
         "planId": { "type": "string" }
       },
       "required": ["userId", "trialStartedAt", "trialEndsAt", "trialStatus", "subscriptionStatus"]
+    },
+    "SurveyResponse": {
+      "title": "SurveyResponse",
+      "description": "21-day user product validation survey response",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "userId": { "type": "string", "maxLength": 128 },
+        "userEmail": { "type": "string", "maxLength": 128 },
+        "userCreatedAt": { "type": "string" },
+        "submittedAt": { "type": "string" },
+        "surveyVersion": { "type": "string", "maxLength": 16 },
+        "status": { "type": "string", "enum": ["completed"] },
+        "answers": { "type": "object" }
+      },
+      "required": ["id", "userId", "submittedAt", "surveyVersion", "status", "answers"]
+    },
+    "AdminUser": {
+      "title": "AdminUser",
+      "description": "Designated administrator identity record",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "email": { "type": "string" },
+        "role": { "type": "string", "enum": ["admin"] }
+      },
+      "required": ["userId", "role"]
     }
   },
   "firestore": {
@@ -70,6 +97,14 @@
     "/users/{userId}/quotes/{quoteId}": {
       "schema": "Quote",
       "description": "User commercial quotes and proposals"
+    },
+    "/survey_responses/{responseId}": {
+      "schema": "SurveyResponse",
+      "description": "21-day product validation survey responses"
+    },
+    "/admins/{adminId}": {
+      "schema": "AdminUser",
+      "description": "Authorized administrators who can view survey responses and metrics"
     }
   }
 }

@@ -7,12 +7,15 @@ interface HeaderProps {
   dueCount: number;
   user: User | null;
   trialState?: TrialStateInfo | null;
+  isAdmin?: boolean;
+  surveyPending?: boolean;
   onSelectTab: (tab: TabView) => void;
   onNewQuote: () => void;
   onOpenAuth: () => void;
   onLogout: () => void;
-  onNavigateLanding?: () => void;
   onOpenSubscription?: () => void;
+  onOpenAdminSurvey?: () => void;
+  onOpenSurvey?: () => void;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -20,12 +23,15 @@ export const Header: React.FC<HeaderProps> = ({
   dueCount,
   user,
   trialState,
+  isAdmin,
+  surveyPending,
   onSelectTab,
   onNewQuote,
   onOpenAuth,
   onLogout,
-  onNavigateLanding,
   onOpenSubscription,
+  onOpenAdminSurvey,
+  onOpenSurvey,
 }) => {
   const activeTab = currentTab === 'det' || currentTab === 'edit' ? 'lista' : currentTab;
 
@@ -107,7 +113,7 @@ export const Header: React.FC<HeaderProps> = ({
                 display: 'inline-flex',
                 alignItems: 'center',
               }}
-              title="Información de prueba y suscripción"
+              title="Información de prueba por tiempo limitado y suscripción"
             >
               {trialState.hasSubscription ? (
                 <span className="chip chip-aceptado" style={{ fontSize: '0.78rem', padding: '3px 8px' }}>
@@ -118,45 +124,59 @@ export const Header: React.FC<HeaderProps> = ({
                   className="chip chip-rechazado"
                   style={{ fontSize: '0.78rem', padding: '3px 8px', fontWeight: 700 }}
                 >
-                  Prueba vencida
-                </span>
-              ) : trialState.badgeType === 'trial_last_day' ? (
-                <span
-                  className="chip chip-vencido"
-                  style={{ fontSize: '0.78rem', padding: '3px 8px', fontWeight: 700 }}
-                >
-                  Último día
-                </span>
-              ) : trialState.badgeType === 'trial_ending_soon' ? (
-                <span className="chip chip-vencido" style={{ fontSize: '0.78rem', padding: '3px 8px' }}>
-                  Prueba: {trialState.daysRemaining}d
+                  Prueba finalizada
                 </span>
               ) : (
                 <span
                   className="chip"
                   style={{
-                    background: 'var(--surface-2)',
+                    background: 'var(--accent-soft)',
                     border: '1px solid var(--line)',
-                    color: 'var(--ink)',
+                    color: 'var(--accent)',
                     fontSize: '0.78rem',
                     padding: '3px 8px',
+                    fontWeight: 600,
                   }}
                 >
-                  Prueba: {trialState.daysRemaining}d
+                  Prueba por tiempo limitado
                 </span>
               )}
             </button>
           )}
 
-          {onNavigateLanding && (
+          {surveyPending && onOpenSurvey && (
             <button
               type="button"
               className="btn btn-quiet sm"
-              onClick={onNavigateLanding}
-              title="Ver landing comercial"
-              style={{ fontSize: '0.84rem' }}
+              onClick={onOpenSurvey}
+              title="Responder encuesta de validación (2 min)"
+              style={{
+                fontSize: '0.82rem',
+                color: 'var(--accent)',
+                fontWeight: 600,
+                border: '1px solid var(--accent-soft)',
+                background: 'var(--accent-soft)',
+              }}
             >
-              Web
+              Opinión
+            </button>
+          )}
+
+          {isAdmin && onOpenAdminSurvey && (
+            <button
+              type="button"
+              className="btn sm"
+              onClick={onOpenAdminSurvey}
+              title="Abrir panel de administración de encuestas"
+              style={{
+                fontSize: '0.82rem',
+                border: '1px solid var(--line)',
+                background: currentTab === 'admin_survey' ? 'var(--accent-soft)' : 'var(--surface-2)',
+                color: currentTab === 'admin_survey' ? 'var(--accent)' : 'var(--ink)',
+                fontWeight: currentTab === 'admin_survey' ? 700 : 500,
+              }}
+            >
+              Admin
             </button>
           )}
 

@@ -123,16 +123,11 @@ export const SubscriptionModal: React.FC<SubscriptionModalProps> = ({
               </span>
             ) : isExpired ? (
               <span className="chip chip-rechazado" style={{ fontSize: '0.82rem' }}>
-                Prueba de 14 días vencida el{' '}
-                {trialState ? formatTrialDateLong(trialState.trialEndsAt) : ''}
-              </span>
-            ) : trialState?.badgeType === 'trial_last_day' ? (
-              <span className="chip chip-vencido" style={{ fontSize: '0.82rem' }}>
-                Último día de prueba gratuita ({trialState.hoursRemaining} h restantes)
+                Prueba por tiempo limitado finalizada
               </span>
             ) : (
               <span className="chip chip-enviado" style={{ fontSize: '0.82rem' }}>
-                Prueba gratuita activa: {trialState?.daysRemaining} días restantes
+                Prueba gratis por tiempo limitado
               </span>
             )}
           </div>

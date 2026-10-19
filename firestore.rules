@@ -6,6 +6,14 @@ service cloud.firestore {
       allow read, write: if false;
     }
 
+    // Helper: checks whether user is an authorized administrator
+    function isAdmin() {
+      return request.auth != null && (
+        exists(/databases/$(database)/documents/admins/$(request.auth.uid)) ||
+        (request.auth.token.email == 'jausisan@gmail.com' && request.auth.token.email_verified == true)
+      );
+    }
+
     // Helper: checks whether user has active access (either active subscription or active 14-day trial)
     function hasActiveAccess(userId) {
       let userDoc = get(/databases/$(database)/documents/users/$(userId));
@@ -18,9 +26,32 @@ service cloud.firestore {
       );
     }
 
+    // Admin role verification collection
+    match /admins/{adminId} {
+      allow read: if request.auth != null && (request.auth.uid == adminId || isAdmin());
+      allow write: if false; // Role assignment is restricted to Firebase Console or Admin SDK
+    }
+
+    // Product validation survey responses (21 days)
+    match /survey_responses/{responseId} {
+      // User can only read their own response; authorized admins can read and list all responses
+      allow read: if request.auth != null && (request.auth.uid == responseId || isAdmin());
+      allow list: if isAdmin();
+
+      // Users can submit their own survey response (responseId must match authenticated userId)
+      allow create, update: if request.auth != null
+        && request.auth.uid == responseId
+        && request.resource.data.userId == request.auth.uid
+        && request.resource.data.status == 'completed'
+        && request.resource.data.surveyVersion is string;
+
+      // Deletion is restricted to admins
+      allow delete: if isAdmin();
+    }
+
     match /users/{userId} {
-      // 1. Reading profile: user can only read their own profile
-      allow read: if request.auth != null && request.auth.uid == userId;
+      // 1. Reading profile: user can only read their own profile; admin can read/list all profiles for metrics
+      allow read, list: if request.auth != null && (request.auth.uid == userId || isAdmin());
 
       // 2. Creating profile (initial registration):
       // - Must be the authenticated user

@@ -55,7 +55,7 @@ export interface AppState {
   quotes: Quote[];
 }
 
-export type TabView = 'hoy' | 'lista' | 'stats' | 'ajustes' | 'det' | 'edit';
+export type TabView = 'hoy' | 'lista' | 'stats' | 'ajustes' | 'det' | 'edit' | 'admin_survey';
 export type ListFilter = 'todos' | 'pendientes' | 'vencidos' | 'aceptados' | 'rechazados' | 'borradores';
 export type StatsPeriod = 'todo' | 'anio' | 'mes';
 
@@ -91,4 +91,37 @@ export interface TrialStateInfo {
   badgeType: TrialBadgeType;
   message: string;
 }
+
+// Product Validation Survey (21 Days)
+export interface SurveyAnswers {
+  q1_usage: string; // 'habitualmente' | 'algunas_veces' | 'apenas' | 'no_suficiente' | ''
+  q2_problems: string[]; // ['seguimiento', 'recordar_contacto', 'organizacion', 'ahorro_tiempo', 'ninguno', 'otro']
+  q2_problemOther?: string;
+  q3_mostValued?: string;
+  q4_leastLiked?: string;
+  q5_willingnessToPay: string; // 'contrataria' | 'probablemente' | 'dependeria' | 'probablemente_no' | 'no_pagaria' | 'no_valoro' | ''
+  q5b_monthlyPrice?: string; // 'menos_6' | '6_10' | '10_15' | '15_20' | 'mas_20' | 'no_pagaria' | 'no_se' | ''
+  q6_requestedFeatures?: string;
+  q7_recommendScore?: number | null; // 0 to 10 or null if skipped
+}
+
+export interface SurveyResponse {
+  id: string; // userId for 1-to-1 mapping
+  userId: string;
+  userEmail?: string | null;
+  userCreatedAt?: string | null;
+  submittedAt: string; // ISO 8601 string
+  surveyVersion: string; // e.g. 'v1'
+  answers: SurveyAnswers;
+  status: 'completed';
+}
+
+export interface SurveyEligibility {
+  isEligible: boolean;
+  daysSinceRegistration: number;
+  hasSubmitted: boolean;
+  dismissedInSession: boolean;
+  reason: string;
+}
+
 

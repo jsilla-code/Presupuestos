@@ -68,11 +68,11 @@ export const LandingPage: React.FC<LandingPageProps> = ({
     },
     {
       q: '¿Cuánto cuesta?',
-      a: 'El precio previsto es de 12 €/mes sin permanencia. Durante esta fase de lanzamiento, dispones de una prueba gratuita completa de 14 días para evaluar el producto sin coste.',
+      a: 'El precio previsto es de 12 €/mes sin permanencia. Durante esta fase de lanzamiento, dispones de una prueba gratuita por tiempo limitado para evaluar el producto sin coste.',
     },
     {
       q: '¿Cómo funciona la prueba gratuita?',
-      a: 'Tienes acceso total e inmediato a todas las funciones durante 14 días. No solicitamos datos de tarjeta bancaria al registrarte ni existen cargos automáticos sorpresa.',
+      a: 'Tienes acceso total e inmediato a todas las funciones durante este periodo de prueba por tiempo limitado. No solicitamos datos de tarjeta bancaria al registrarte ni existen cargos automáticos sorpresa.',
     },
   ];
 
@@ -297,7 +297,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({
                       onNavigate('/register');
                     }}
                   >
-                    Probar gratis 14 días
+                    Probar gratis por tiempo limitado
                   </button>
                 </>
               )}
@@ -373,7 +373,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({
                     }}
                     onClick={() => onNavigate(isAuthenticated ? '/app' : '/register')}
                   >
-                    {isAuthenticated ? 'Abrir PresuFollow' : 'Probar gratis 14 días'}
+                    {isAuthenticated ? 'Abrir PresuFollow' : 'Probar gratis por tiempo limitado'}
                     <ArrowRight size={18} />
                   </button>
 
@@ -1103,7 +1103,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({
                   borderRadius: '99px',
                 }}
               >
-                Prueba 14 días gratis
+                Prueba gratis por tiempo limitado
               </div>
 
               <div>
@@ -1176,7 +1176,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({
                 }}
                 onClick={() => onNavigate(isAuthenticated ? '/app' : '/register')}
               >
-                {isAuthenticated ? 'Acceder a mi cuenta' : 'Probar gratis 14 días'}
+                {isAuthenticated ? 'Acceder a mi cuenta' : 'Probar gratis por tiempo limitado'}
               </button>
 
               <div
@@ -1553,7 +1553,13 @@ export const LandingPage: React.FC<LandingPageProps> = ({
                   </p>
                   <p>
                     <strong>Finalidad:</strong> Gestión del alta de usuario, autenticación mediante
-                    Firebase y almacenamiento seguro de presupuestos y clientes.
+                    Firebase, almacenamiento seguro de presupuestos y clientes, y recogida voluntaria
+                    de encuestas de validación y mejora de producto tras periodos de uso de la herramienta.
+                  </p>
+                  <p>
+                    <strong>Encuestas y feedback de producto:</strong> Tras 21 días de uso, solicitamos
+                    de forma voluntaria valoraciones sobre la experiencia de uso, funcionalidades más valoradas
+                    y disposición de cuota mensual, con el único fin de orientar el desarrollo de la herramienta.
                   </p>
                   <p>
                     <strong>Base jurídica:</strong> Consentimiento del usuario y ejecución de la
@@ -1565,7 +1571,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({
                     electrónico.
                   </p>
                   <p className="hint">
-                    Documento de privacidad pendiente de redacción definitiva conforme a RGPD / LOPDGDD.
+                    Documento de privacidad conforme a RGPD / LOPDGDD.
                   </p>
                 </div>
               )}
@@ -1596,7 +1602,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({
                     €/mes sin permanencia mínima.
                   </p>
                   <p>
-                    <strong>Periodo de prueba:</strong> La prueba gratuita es de 14 días a partir del
+                    <strong>Periodo de prueba:</strong> La prueba gratuita es por tiempo limitado a partir del
                     registro sin requerir tarjeta de crédito.
                   </p>
                   <p>

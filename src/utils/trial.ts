@@ -7,14 +7,13 @@ import {
 } from '../types';
 
 /**
- * Standard duration of the free trial in milliseconds (14 natural days).
- * 14 days * 24 hours * 60 minutes * 60 seconds * 1000 ms = 1,209,600,000 ms.
+ * Standard duration of the free trial during validation phase (limited time).
  */
-export const TRIAL_DURATION_DAYS = 14;
+export const TRIAL_DURATION_DAYS = 180;
 export const TRIAL_DURATION_MS = TRIAL_DURATION_DAYS * 24 * 60 * 60 * 1000;
 
 /**
- * Calculates start and end dates for a 14-day trial.
+ * Calculates start and end dates for a limited-time trial.
  * If an existing accountCreationTime is provided (from Firebase Auth metadata),
  * it uses that authoritative timestamp so existing accounts do not receive
  * an unauthorized trial extension.
@@ -59,12 +58,13 @@ export function computeTrialState(
   const now = referenceNow;
 
   const hasSubscription = profile.subscriptionStatus === 'active';
-  const msRemaining = endsAt.getTime() - now.getTime();
-  const isTrialActive = !hasSubscription && msRemaining > 0;
-  const isExpired = !hasSubscription && msRemaining <= 0;
+  // In this product validation phase, users enjoy a free trial for a limited time without counter restrictions
+  const isExplicitlyExpired = profile.subscriptionStatus === 'canceled' || profile.subscriptionStatus === 'past_due';
+  const isExpired = isExplicitlyExpired;
+  const isTrialActive = !hasSubscription && !isExpired;
   const isActive = hasSubscription || isTrialActive;
 
-  // Days remaining derived strictly from trialEndsAt (never from a mutable local timer)
+  const msRemaining = Math.max(0, endsAt.getTime() - now.getTime());
   const daysRemaining = Math.max(0, Math.ceil(msRemaining / (1000 * 60 * 60 * 24)));
   const hoursRemaining = Math.max(0, Math.ceil(msRemaining / (1000 * 60 * 60)));
 
@@ -76,16 +76,10 @@ export function computeTrialState(
     message = 'Plan Profesional activo';
   } else if (isExpired) {
     badgeType = 'trial_expired';
-    message = 'Tu prueba gratuita ha terminado. Contrata un plan para recuperar las funciones de pago.';
-  } else if (msRemaining <= 24 * 60 * 60 * 1000) {
-    badgeType = 'trial_last_day';
-    message = `Último día de prueba gratuita (${hoursRemaining} h restantes). Elige un plan para seguir disfrutando de todas las funciones.`;
-  } else if (daysRemaining <= 3) {
-    badgeType = 'trial_ending_soon';
-    message = `Tu prueba gratuita termina pronto (${daysRemaining} ${daysRemaining === 1 ? 'día' : 'días'}). Elige un plan para seguir disfrutando de todas las funciones.`;
+    message = 'Tu prueba gratuita por tiempo limitado ha finalizado. Contrata un plan para recuperar las funciones de pago.';
   } else {
     badgeType = 'trial_active';
-    message = `Te quedan ${daysRemaining} días de prueba gratuita`;
+    message = 'Prueba gratuita por tiempo limitado activa';
   }
 
   const trialStatus: TrialStatus = isExpired ? 'expired' : 'active';

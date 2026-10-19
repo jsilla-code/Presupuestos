@@ -9,7 +9,7 @@ interface TrialBannerProps {
 
 export const TrialBanner: React.FC<TrialBannerProps> = ({ trialState, onOpenPlans }) => {
   // If subscription is active, display a subtle non-intrusive badge or nothing
-  if (trialState.isSubscriptionActive) {
+  if (trialState.hasSubscription) {
     return (
       <div
         style={{
@@ -54,7 +54,7 @@ export const TrialBanner: React.FC<TrialBannerProps> = ({ trialState, onOpenPlan
       >
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontWeight: 600 }}>
           <AlertCircle size={18} />
-          <span>Tu prueba gratuita de 14 días ha terminado. Estás en modo solo lectura.</span>
+          <span>Tu prueba gratuita por tiempo limitado ha terminado. Estás en modo solo lectura.</span>
         </div>
         <button
           type="button"
@@ -69,7 +69,7 @@ export const TrialBanner: React.FC<TrialBannerProps> = ({ trialState, onOpenPlan
   }
 
   // Last day of trial banner
-  if (trialState.statusType === 'active_last_day') {
+  if (trialState.badgeType === 'trial_last_day') {
     return (
       <div
         style={{
@@ -103,8 +103,8 @@ export const TrialBanner: React.FC<TrialBannerProps> = ({ trialState, onOpenPlan
     );
   }
 
-  // Expiring soon (<= 3 days)
-  if (trialState.statusType === 'active_expiring_soon') {
+  // Expiring soon
+  if (trialState.badgeType === 'trial_ending_soon') {
     return (
       <div
         style={{
@@ -123,7 +123,7 @@ export const TrialBanner: React.FC<TrialBannerProps> = ({ trialState, onOpenPlan
       >
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontWeight: 600 }}>
           <Clock size={16} />
-          <span>Tu prueba gratuita termina pronto: te quedan {trialState.daysRemaining} días.</span>
+          <span>Tu prueba gratuita por tiempo limitado termina pronto.</span>
         </div>
         <button
           type="button"
@@ -137,7 +137,7 @@ export const TrialBanner: React.FC<TrialBannerProps> = ({ trialState, onOpenPlan
     );
   }
 
-  // Normal active trial (> 3 days)
+  // Normal active trial
   return (
     <div
       style={{
@@ -158,7 +158,7 @@ export const TrialBanner: React.FC<TrialBannerProps> = ({ trialState, onOpenPlan
       <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
         <Clock size={15} color="var(--accent)" />
         <span>
-          Te quedan <strong style={{ color: 'var(--ink)' }}>{trialState.daysRemaining} días</strong> de prueba gratuita
+          <strong style={{ color: 'var(--ink)' }}>Prueba gratuita por tiempo limitado activa</strong>
         </span>
       </div>
       <button

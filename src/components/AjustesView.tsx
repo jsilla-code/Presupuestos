@@ -8,6 +8,10 @@ interface AjustesViewProps {
   appState: AppState;
   user: User | null;
   trialState?: TrialStateInfo | null;
+  isAdmin?: boolean;
+  surveySubmitted?: boolean;
+  surveyEligible?: boolean;
+  surveyDaysElapsed?: number;
   onUpdateSettings: (newSettings: Settings) => void;
   onRestoreBackup: (restoredState: AppState) => void;
   onCopyText: (text: string, toastMsg?: string) => void;
@@ -15,12 +19,18 @@ interface AjustesViewProps {
   onOpenAuth: () => void;
   onLogout: () => void;
   onOpenSubscription?: (reason?: string) => void;
+  onOpenSurvey?: () => void;
+  onOpenAdminSurvey?: () => void;
 }
 
 export const AjustesView: React.FC<AjustesViewProps> = ({
   appState,
   user,
   trialState,
+  isAdmin,
+  surveySubmitted,
+  surveyEligible,
+  surveyDaysElapsed = 0,
   onUpdateSettings,
   onRestoreBackup,
   onCopyText,
@@ -28,6 +38,8 @@ export const AjustesView: React.FC<AjustesViewProps> = ({
   onOpenAuth,
   onLogout,
   onOpenSubscription,
+  onOpenSurvey,
+  onOpenAdminSurvey,
 }) => {
   const settings = appState.settings;
 
@@ -157,10 +169,8 @@ export const AjustesView: React.FC<AjustesViewProps> = ({
                 <span className="chip chip-aceptado">Plan Profesional</span>
               ) : trialState.isExpired ? (
                 <span className="chip chip-rechazado">Prueba finalizada</span>
-              ) : trialState.badgeType === 'trial_last_day' ? (
-                <span className="chip chip-vencido">Último día</span>
               ) : (
-                <span className="chip chip-enviado">Prueba 14 días</span>
+                <span className="chip chip-enviado">Prueba por tiempo limitado</span>
               )
             )}
           </div>
@@ -168,31 +178,23 @@ export const AjustesView: React.FC<AjustesViewProps> = ({
           {trialState && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', fontSize: '0.9rem' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid var(--line)', paddingBottom: '6px' }}>
-                <span className="muted">Inicio de la prueba:</span>
-                <span className="num">{formatTrialDateTime(trialState.trialStartedAt)}</span>
+                <span className="muted">Modalidad actual:</span>
+                <span style={{ fontWeight: 600 }}>Prueba gratuita por tiempo limitado</span>
               </div>
               <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid var(--line)', paddingBottom: '6px' }}>
-                <span className="muted">Fin de la prueba:</span>
-                <span className="num">{formatTrialDateTime(trialState.trialEndsAt)}</span>
-              </div>
-              <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid var(--line)', paddingBottom: '6px' }}>
-                <span className="muted">Días restantes:</span>
-                <span
-                  className="num"
-                  style={{
-                    fontWeight: 700,
-                    color: trialState.isExpired
-                      ? 'var(--bad)'
-                      : trialState.badgeType === 'trial_ending_soon' || trialState.badgeType === 'trial_last_day'
-                      ? 'var(--warn)'
-                      : 'var(--ok)',
-                  }}
-                >
-                  {trialState.isExpired ? '0 días (vencida)' : `${trialState.daysRemaining} días`}
+                <span className="muted">Estado de acceso:</span>
+                <span style={{ fontWeight: 600, color: trialState.isExpired ? 'var(--bad)' : 'var(--ok)' }}>
+                  {trialState.isExpired ? 'Acceso de solo lectura' : 'Acceso completo habilitado'}
                 </span>
               </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid var(--line)', paddingBottom: '6px' }}>
+                <span className="muted">Fecha de registro:</span>
+                <span className="num">{formatTrialDateTime(trialState.trialStartedAt)}</span>
+              </div>
               <div style={{ marginTop: '4px', fontSize: '0.86rem', color: 'var(--muted)' }}>
-                {trialState.message}
+                {trialState.isExpired
+                  ? 'Tu prueba gratuita por tiempo limitado ha finalizado.'
+                  : 'Disfrutas de acceso completo a PresuFollow sin coste durante esta fase de prueba por tiempo limitado.'}
               </div>
               {onOpenSubscription && (
                 <div style={{ marginTop: '8px' }}>
@@ -203,13 +205,75 @@ export const AjustesView: React.FC<AjustesViewProps> = ({
                   >
                     {trialState.isExpired
                       ? 'Activar Plan Profesional (12 €/mes)'
-                      : 'Ver detalles del Plan Profesional'}
+                      : 'Ver detalles del Plan Profesional (12 €/mes)'}
                   </button>
                 </div>
               )}
             </div>
           )}
         </section>
+
+        {/* Encuesta de validación de producto (21 días) */}
+        <section className="card">
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+            <h3 style={{ margin: 0 }}>Encuesta de validación</h3>
+            {surveySubmitted ? (
+              <span className="chip chip-aceptado" style={{ fontSize: '0.8rem' }}>
+                Respondida
+              </span>
+            ) : surveyEligible ? (
+              <span className="chip chip-vencido" style={{ fontSize: '0.8rem' }}>
+                Disponible ({surveyDaysElapsed} días)
+              </span>
+            ) : (
+              <span className="chip" style={{ fontSize: '0.8rem', background: 'var(--surface-2)', border: '1px solid var(--line)' }}>
+                Día {surveyDaysElapsed} de 21
+              </span>
+            )}
+          </div>
+
+          <p className="hint" style={{ margin: '0 0 12px', fontSize: '0.88rem' }}>
+            {surveySubmitted
+              ? 'Ya has enviado tus respuestas para la encuesta de validación de producto. ¡Muchas gracias por tu colaboración!'
+              : 'Para adaptar PresuFollow a las necesidades reales de autónomos y pequeños negocios, realizamos una encuesta breve a los usuarios tras 21 días de uso.'}
+          </p>
+
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
+            {onOpenSurvey && (
+              <button
+                type="button"
+                className={surveySubmitted ? 'btn btn-quiet sm' : 'btn btn-primary sm'}
+                onClick={onOpenSurvey}
+              >
+                {surveySubmitted ? 'Ver / Modificar respuestas' : 'Responder encuesta (2 min)'}
+              </button>
+            )}
+          </div>
+        </section>
+
+        {/* Panel de administración privada (Solo administradores autorizados) */}
+        {isAdmin && (
+          <section className="card" style={{ borderColor: 'var(--accent)' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+              <h3 style={{ margin: 0, color: 'var(--accent)' }}>Administración de Encuestas</h3>
+              <span className="chip chip-aceptado" style={{ fontSize: '0.78rem' }}>
+                Admin
+              </span>
+            </div>
+            <p className="hint" style={{ margin: '0 0 12px', fontSize: '0.88rem' }}>
+              Consulta las estadísticas en tiempo real, tasas de respuesta, distribución de disposición de pago, precios aceptados y exporta las respuestas a CSV.
+            </p>
+            {onOpenAdminSurvey && (
+              <button
+                type="button"
+                className="btn btn-primary sm"
+                onClick={onOpenAdminSurvey}
+              >
+                Abrir panel de resultados
+              </button>
+            )}
+          </section>
+        )}
 
         {/* Tu negocio */}
         <section className="card">

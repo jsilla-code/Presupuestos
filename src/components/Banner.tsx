@@ -40,7 +40,7 @@ export const Banner: React.FC<BannerProps> = ({
           }}
         >
           <span>
-            <strong>Prueba gratuita finalizada:</strong> Puedes consultar todos tus presupuestos creados, pero las funciones de creación y edición están pausadas hasta activar tu suscripción.
+            <strong>Prueba por tiempo limitado finalizada:</strong> Puedes consultar todos tus presupuestos creados, pero las funciones de creación y edición están pausadas hasta activar tu suscripción.
           </span>
           {onOpenSubscription && (
             <button

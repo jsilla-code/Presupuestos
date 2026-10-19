@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
+import { AdminSurveyView } from './components/AdminSurveyView';
 import { AjustesView } from './components/AjustesView';
 import { AuthModal } from './components/AuthModal';
 import { AuthScreen } from './components/AuthScreen';
@@ -11,12 +12,16 @@ import { HoyView } from './components/HoyView';
 import { LandingPage } from './components/LandingPage';
 import { ListaView } from './components/ListaView';
 import { SubscriptionModal } from './components/SubscriptionModal';
+import { SurveyModal } from './components/SurveyModal';
 import { Toast } from './components/Toast';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import {
+  checkIsUserAdmin,
   clearUserExampleQuotes,
   deleteUserQuote,
   ensureUserSubscriptionProfile,
+  getSurveyResponse,
+  saveSurveyResponse,
   saveUserQuote,
   saveUserSettings,
   seedUserQuotes,
@@ -24,10 +29,22 @@ import {
   subscribeToUserSettings,
   subscribeToUserSubscription,
 } from './lib/firestoreService';
-import { AppState, ListFilter, Quote, Settings, TabView, TrialStateInfo, UserSubscriptionProfile } from './types';
+import {
+  AppState,
+  ListFilter,
+  Quote,
+  Settings,
+  SurveyAnswers,
+  SurveyEligibility,
+  SurveyResponse,
+  TabView,
+  TrialStateInfo,
+  UserSubscriptionProfile,
+} from './types';
 import { nextNum, uid } from './utils/calc';
 import { addDays, isVencido, nextFu, pad, today } from './utils/date';
 import { seed } from './utils/storage';
+import { calculateSurveyEligibility, markSurveyDismissedInSession } from './utils/survey';
 import { computeTrialState } from './utils/trial';
 
 const defaultFallbackSettings: Settings = {
@@ -88,6 +105,12 @@ const MainApp: React.FC = () => {
   const [subscriptionModalReason, setSubscriptionModalReason] = useState<string | null>(null);
   const [nowTick, setNowTick] = useState<Date>(() => new Date());
 
+  // Survey (21 Days) and Admin state
+  const [isAdmin, setIsAdmin] = useState(false);
+  const [surveyResponse, setSurveyResponse] = useState<SurveyResponse | null>(null);
+  const [isSurveyModalOpen, setIsSurveyModalOpen] = useState(false);
+  const [surveyDismissedInSession, setSurveyDismissedInSession] = useState(false);
+
   // Periodically refresh nowTick (every 60s) for live trial countdown
   useEffect(() => {
     const timer = window.setInterval(() => {
@@ -102,11 +125,21 @@ const MainApp: React.FC = () => {
     return computeTrialState(subscriptionProfile, nowTick);
   }, [subscriptionProfile, nowTick]);
 
+  // Compute survey eligibility (21 natural days)
+  const surveyEligibility: SurveyEligibility = useMemo(() => {
+    return calculateSurveyEligibility(
+      subscriptionProfile?.createdAt,
+      user?.metadata.creationTime,
+      !!surveyResponse,
+      nowTick
+    );
+  }, [subscriptionProfile, user, surveyResponse, nowTick]);
+
   // Central access control gate for write operations
   const ensureActiveAccess = (actionDescription: string): boolean => {
     if (trialState && trialState.isExpired) {
       setSubscriptionModalReason(
-        `Tu prueba gratuita de 14 días ha finalizado. Para ${actionDescription}, activa tu suscripción al Plan Profesional.`
+        `Tu prueba gratuita por tiempo limitado ha finalizado. Para ${actionDescription}, activa tu suscripción al Plan Profesional.`
       );
       setIsSubscriptionModalOpen(true);
       return false;
@@ -231,12 +264,89 @@ const MainApp: React.FC = () => {
       }
     );
 
+    // 6. Check if user is an authorized admin
+    checkIsUserAdmin(user).then((adminResult) => {
+      setIsAdmin(adminResult);
+    });
+
+    // 7. Check if user has already submitted survey response
+    try {
+      const cachedSurvey = localStorage.getItem(`presufollow.survey_submitted.${user.uid}`);
+      if (cachedSurvey === 'true') {
+        setSurveyResponse({
+          id: user.uid,
+          userId: user.uid,
+          userEmail: user.email || null,
+          submittedAt: '',
+          surveyVersion: 'v1',
+          answers: {} as SurveyAnswers,
+          status: 'completed',
+        });
+      }
+    } catch {}
+
+    getSurveyResponse(user.uid).then((res) => {
+      if (res) {
+        setSurveyResponse(res);
+        try {
+          localStorage.setItem(`presufollow.survey_submitted.${user.uid}`, 'true');
+        } catch {}
+      }
+    });
+
     return () => {
       unsubSub();
       unsubQuotes();
       unsubSettings();
     };
   }, [user]);
+
+  // Automatic Trigger for 21-Day Product Validation Survey
+  useEffect(() => {
+    if (
+      user &&
+      surveyEligibility.isEligible &&
+      !surveyEligibility.hasSubmitted &&
+      !surveyEligibility.dismissedInSession &&
+      !surveyDismissedInSession &&
+      !dataLoading &&
+      route === '/app'
+    ) {
+      // Small delay (1.5s) so the application dashboard loads smoothly before opening
+      const timer = window.setTimeout(() => {
+        setIsSurveyModalOpen(true);
+      }, 1500);
+      return () => window.clearTimeout(timer);
+    }
+  }, [user, surveyEligibility, surveyDismissedInSession, dataLoading, route]);
+
+  const handleCloseSurvey = () => {
+    setIsSurveyModalOpen(false);
+    markSurveyDismissedInSession();
+    setSurveyDismissedInSession(true);
+  };
+
+  const handleSubmitSurvey = async (answers: SurveyAnswers): Promise<boolean> => {
+    if (!user) return false;
+    const newResponse: SurveyResponse = {
+      id: user.uid,
+      userId: user.uid,
+      userEmail: user.email || null,
+      userCreatedAt: subscriptionProfile?.createdAt || user.metadata.creationTime || new Date().toISOString(),
+      submittedAt: new Date().toISOString(),
+      surveyVersion: 'v1',
+      answers,
+      status: 'completed',
+    };
+
+    const ok = await saveSurveyResponse(newResponse);
+    if (ok) {
+      setSurveyResponse(newResponse);
+      showToast('¡Encuesta enviada con éxito! Muchas gracias.');
+      return true;
+    }
+    return false;
+  };
 
   const showToast = (msg: string) => {
     setToastMsg(msg);
@@ -823,15 +933,18 @@ const MainApp: React.FC = () => {
         dueCount={dueCount}
         user={user}
         trialState={trialState}
+        isAdmin={isAdmin}
+        surveyPending={surveyEligibility.isEligible && !surveyEligibility.hasSubmitted}
         onSelectTab={(tab) => navigateTo(tab)}
         onNewQuote={handleNewQuote}
         onOpenAuth={() => setIsAuthModalOpen(true)}
         onLogout={handleLogout}
-        onNavigateLanding={() => navigateRoute('/')}
         onOpenSubscription={() => {
           setSubscriptionModalReason(null);
           setIsSubscriptionModalOpen(true);
         }}
+        onOpenSurvey={() => setIsSurveyModalOpen(true)}
+        onOpenAdminSurvey={() => navigateTo('admin_survey')}
       />
 
       <Banner
@@ -882,6 +995,10 @@ const MainApp: React.FC = () => {
               appState={appState}
               user={user}
               trialState={trialState}
+              isAdmin={isAdmin}
+              surveySubmitted={!!surveyResponse}
+              surveyEligible={surveyEligibility.isEligible}
+              surveyDaysElapsed={surveyEligibility.daysSinceRegistration}
               onUpdateSettings={handleUpdateSettings}
               onRestoreBackup={handleRestoreBackup}
               onCopyText={copyText}
@@ -892,7 +1009,28 @@ const MainApp: React.FC = () => {
                 setSubscriptionModalReason(reason || null);
                 setIsSubscriptionModalOpen(true);
               }}
+              onOpenSurvey={() => setIsSurveyModalOpen(true)}
+              onOpenAdminSurvey={() => navigateTo('admin_survey')}
             />
+          )}
+
+          {currentTab === 'admin_survey' && (
+            isAdmin ? (
+              <AdminSurveyView
+                onBackToApp={() => navigateTo('hoy')}
+                currentUserEmail={user.email}
+              />
+            ) : (
+              <div className="card" style={{ textAlign: 'center', padding: '40px 20px' }}>
+                <h3 style={{ marginBottom: '8px' }}>Acceso Restringido</h3>
+                <p className="muted" style={{ marginBottom: '16px' }}>
+                  Solo los administradores autorizados en Firebase pueden consultar los resultados de las encuestas.
+                </p>
+                <button type="button" className="btn sm" onClick={() => navigateTo('hoy')}>
+                  ← Volver a la aplicación
+                </button>
+              </div>
+            )
           )}
 
           {currentTab === 'edit' && editFormData && (
@@ -943,6 +1081,13 @@ const MainApp: React.FC = () => {
       <footer className="foot">
         Conectado como <strong>{user.email || user.displayName}</strong>.
       </footer>
+
+      <SurveyModal
+        isOpen={isSurveyModalOpen}
+        onClose={handleCloseSurvey}
+        onSubmit={handleSubmitSurvey}
+        userEmail={user.email}
+      />
 
       <SubscriptionModal
         isOpen={isSubscriptionModalOpen}

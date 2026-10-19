@@ -2,6 +2,7 @@ import {
   collection,
   doc,
   getDoc,
+  getDocs,
   setDoc,
   deleteDoc,
   onSnapshot,
@@ -9,7 +10,7 @@ import {
   Timestamp,
 } from 'firebase/firestore';
 import { User } from 'firebase/auth';
-import { Quote, Settings, UserSubscriptionProfile } from '../types';
+import { Quote, Settings, SurveyResponse, UserSubscriptionProfile } from '../types';
 import { calculateTrialDates } from '../utils/trial';
 import { auth, db } from './firebase';
 
@@ -191,7 +192,7 @@ export function parseSubscriptionProfileDoc(data: Record<string, unknown>, userI
     trialStartedAtIso = data.trialStartedAt;
   }
 
-  let trialEndsAtIso = new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString();
+  let trialEndsAtIso = new Date(Date.now() + 180 * 24 * 60 * 60 * 1000).toISOString();
   if (data.trialEndsAt instanceof Timestamp) {
     trialEndsAtIso = data.trialEndsAt.toDate().toISOString();
   } else if (typeof data.trialEndsAtIso === 'string') {
@@ -201,7 +202,7 @@ export function parseSubscriptionProfileDoc(data: Record<string, unknown>, userI
   }
 
   const subscriptionStatus = (data.subscriptionStatus as string) || 'none';
-  const isExpired = Date.now() >= new Date(trialEndsAtIso).getTime();
+  const isExpired = subscriptionStatus === 'canceled' || subscriptionStatus === 'past_due';
 
   return {
     userId,
@@ -219,7 +220,7 @@ export function parseSubscriptionProfileDoc(data: Record<string, unknown>, userI
 /**
  * Ensures a user subscription profile document exists at /users/{userId}.
  * If it already exists, it is loaded without modifying any dates.
- * If it does not exist, a new 14-day trial is registered using the authoritative
+ * If it does not exist, a new limited-time trial is registered using the authoritative
  * account creation time, preventing unauthorized resets.
  */
 export async function ensureUserSubscriptionProfile(user: User): Promise<UserSubscriptionProfile | null> {
@@ -301,4 +302,112 @@ export function subscribeToUserSubscription(
     }
   );
 }
+
+/**
+ * Saves a 21-day survey response to /survey_responses/{userId}.
+ * Re-attempts and merges securely to avoid duplicate survey records.
+ */
+export async function saveSurveyResponse(response: SurveyResponse): Promise<boolean> {
+  const path = `survey_responses/${response.userId}`;
+  try {
+    const surveyDocRef = doc(db, 'survey_responses', response.userId);
+    await setDoc(surveyDocRef, response, { merge: true });
+    try {
+      localStorage.setItem(`presufollow.survey_submitted.${response.userId}`, 'true');
+    } catch {
+      // Local storage handled quietly
+    }
+    return true;
+  } catch (error) {
+    handleFirestoreError(error, OperationType.WRITE, path);
+    return false;
+  }
+}
+
+/**
+ * Checks if the user has already submitted a survey response.
+ */
+export async function getSurveyResponse(userId: string): Promise<SurveyResponse | null> {
+  const path = `survey_responses/${userId}`;
+  try {
+    const surveyDocRef = doc(db, 'survey_responses', userId);
+    const snap = await getDoc(surveyDocRef);
+    if (snap.exists()) {
+      return snap.data() as SurveyResponse;
+    }
+    return null;
+  } catch (error) {
+    // If the doc doesn't exist or transient network warning
+    console.warn(`Could not check survey response for ${userId}:`, error);
+    return null;
+  }
+}
+
+/**
+ * Checks whether an authenticated user is an authorized administrator.
+ * Verification order:
+ * 1. Primary owner email (jausisan@gmail.com) verified with provider
+ * 2. Dedicated Firestore document exists at /admins/{userId}
+ */
+export async function checkIsUserAdmin(user: User | null): Promise<boolean> {
+  if (!user) return false;
+
+  // 1. Owner email check (with provider verification)
+  const isOwnerEmail = user.email?.toLowerCase() === 'jausisan@gmail.com';
+  const isVerified = user.emailVerified || user.providerData.some((p) => p.providerId === 'google.com');
+  if (isOwnerEmail && isVerified) {
+    return true;
+  }
+
+  // 2. Check if a role document exists in /admins/{uid}
+  try {
+    const adminDocRef = doc(db, 'admins', user.uid);
+    const snap = await getDoc(adminDocRef);
+    return snap.exists();
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Fetches all registered user profiles and all survey responses for the private admin panel.
+ * Only callable by authorized administrators (rejected by Firestore security rules for others).
+ */
+export async function fetchAdminSurveyData(): Promise<{
+  users: UserSubscriptionProfile[];
+  responses: SurveyResponse[];
+}> {
+  const usersPath = 'users';
+  const responsesPath = 'survey_responses';
+
+  try {
+    // 1. Fetch all user profile docs to count registered accounts and 21-day eligibility
+    const usersColRef = collection(db, usersPath);
+    const usersSnap = await getDocs(usersColRef);
+    const usersList: UserSubscriptionProfile[] = [];
+    usersSnap.forEach((d) => {
+      usersList.push(parseSubscriptionProfileDoc(d.data() as Record<string, unknown>, d.id));
+    });
+
+    // 2. Fetch all survey response docs
+    const responsesColRef = collection(db, responsesPath);
+    const responsesSnap = await getDocs(responsesColRef);
+    const responsesList: SurveyResponse[] = [];
+    responsesSnap.forEach((d) => {
+      responsesList.push(d.data() as SurveyResponse);
+    });
+
+    // Sort responses by submission date descending (newest first)
+    responsesList.sort((a, b) => (a.submittedAt < b.submittedAt ? 1 : -1));
+
+    return {
+      users: usersList,
+      responses: responsesList,
+    };
+  } catch (error) {
+    handleFirestoreError(error, OperationType.LIST, `${usersPath} & ${responsesPath}`);
+    throw error;
+  }
+}
+
 
