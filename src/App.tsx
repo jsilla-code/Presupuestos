@@ -32,6 +32,7 @@ import {
 import {
   AppState,
   ListFilter,
+  Payment,
   Quote,
   Settings,
   SurveyAnswers,
@@ -41,8 +42,9 @@ import {
   TrialStateInfo,
   UserSubscriptionProfile,
 } from './types';
-import { nextNum, uid } from './utils/calc';
+import { fmt, nextNum, uid } from './utils/calc';
 import { addDays, isVencido, nextFu, pad, today } from './utils/date';
+import { getPaymentMethodLabel, paymentUid } from './utils/payments';
 import { seed } from './utils/storage';
 import { calculateSurveyEligibility, markSurveyDismissedInSession } from './utils/survey';
 import { computeTrialState } from './utils/trial';
@@ -743,6 +745,109 @@ const MainApp: React.FC = () => {
     });
   };
 
+  const handleAddPayment = async (quoteId: string, paymentData: Omit<Payment, 'id'>) => {
+    if (!user) return;
+    if (!ensureActiveAccess('registrar un pago')) return;
+    const q = quotes.find((x) => x.id === quoteId);
+    if (!q) return;
+
+    const newPayment: Payment = {
+      ...paymentData,
+      id: paymentUid(),
+    };
+
+    const currentPagos = Array.isArray(q.pagos) ? q.pagos : [];
+    const nextPagos = [...currentPagos, newPayment];
+
+    const updated: Quote = {
+      ...q,
+      pagos: nextPagos,
+    };
+
+    const methodLabel = paymentData.metodo ? ` (${getPaymentMethodLabel(paymentData.metodo)})` : '';
+    addHistory(updated, `Pago registrado: ${fmt(paymentData.cantidad)}${methodLabel}`);
+
+    setQuotes((prev) => {
+      const next = prev.map((item) => (item.id === quoteId ? updated : item));
+      saveUserLocalCache(user.uid, next);
+      return next;
+    });
+
+    showToast(`Pago de ${fmt(paymentData.cantidad)} registrado`);
+
+    const ok = await saveUserQuote(user.uid, updated);
+    if (!ok) setFirestoreErr(true);
+    return ok;
+  };
+
+  const handleEditPayment = async (
+    quoteId: string,
+    paymentId: string,
+    paymentData: Omit<Payment, 'id'>
+  ) => {
+    if (!user) return;
+    if (!ensureActiveAccess('editar este pago')) return;
+    const q = quotes.find((x) => x.id === quoteId);
+    if (!q) return;
+
+    const currentPagos = Array.isArray(q.pagos) ? q.pagos : [];
+    const nextPagos = currentPagos.map((p) =>
+      p.id === paymentId ? { ...paymentData, id: paymentId } : p
+    );
+
+    const updated: Quote = {
+      ...q,
+      pagos: nextPagos,
+    };
+
+    addHistory(updated, `Pago editado: ${fmt(paymentData.cantidad)}`);
+
+    setQuotes((prev) => {
+      const next = prev.map((item) => (item.id === quoteId ? updated : item));
+      saveUserLocalCache(user.uid, next);
+      return next;
+    });
+
+    showToast('Pago actualizado');
+
+    const ok = await saveUserQuote(user.uid, updated);
+    if (!ok) setFirestoreErr(true);
+    return ok;
+  };
+
+  const handleDeletePayment = async (quoteId: string, paymentId: string) => {
+    if (!user) return;
+    if (!ensureActiveAccess('eliminar este pago')) return;
+    const q = quotes.find((x) => x.id === quoteId);
+    if (!q) return;
+
+    const currentPagos = Array.isArray(q.pagos) ? q.pagos : [];
+    const targetPayment = currentPagos.find((p) => p.id === paymentId);
+    const nextPagos = currentPagos.filter((p) => p.id !== paymentId);
+
+    const updated: Quote = {
+      ...q,
+      pagos: nextPagos,
+    };
+
+    addHistory(
+      updated,
+      `Pago eliminado: ${targetPayment ? fmt(targetPayment.cantidad) : 'registrado'}`
+    );
+
+    setQuotes((prev) => {
+      const next = prev.map((item) => (item.id === quoteId ? updated : item));
+      saveUserLocalCache(user.uid, next);
+      return next;
+    });
+
+    showToast('Pago eliminado');
+
+    const ok = await saveUserQuote(user.uid, updated);
+    if (!ok) setFirestoreErr(true);
+    return ok;
+  };
+
   const handleLoadExamples = () => {
     if (!user) return;
     if (!ensureActiveAccess('cargar presupuestos de ejemplo')) return;
@@ -1060,6 +1165,9 @@ const MainApp: React.FC = () => {
                 onMarkSent={handleMarkSent}
                 onFollowUpDone={handleFollowUpDone}
                 onCopyText={copyText}
+                onAddPayment={handleAddPayment}
+                onEditPayment={handleEditPayment}
+                onDeletePayment={handleDeletePayment}
               />
             ) : (
               <div className="empty">

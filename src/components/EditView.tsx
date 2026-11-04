@@ -186,6 +186,29 @@ export const EditView: React.FC<EditViewProps> = ({
         </div>
       )}
 
+      {formData.id && (() => {
+        const existingQuote = existingQuotes.find((q) => q.id === formData.id);
+        const alreadyPaid = existingQuote?.pagos?.reduce((s, p) => s + (p.cantidad || 0), 0) || 0;
+        if (alreadyPaid > 0 && c.total < alreadyPaid) {
+          return (
+            <div
+              className="errs"
+              style={{
+                background: 'var(--warn-soft)',
+                borderColor: 'rgba(180, 83, 9, 0.4)',
+                color: 'var(--warn)',
+              }}
+              role="alert"
+            >
+              <p>
+                <strong>Aviso de cobros:</strong> El nuevo importe total ({fmt(c.total)}) es inferior a los pagos ya registrados para este presupuesto ({fmt(alreadyPaid)}). El historial de pagos se mantendrá íntegro, pero revisa las cantidades para evitar inconsistencias.
+              </p>
+            </div>
+          );
+        }
+        return null;
+      })()}
+
       <div className="stack">
         {/* Cliente y trabajo */}
         <section className="card">

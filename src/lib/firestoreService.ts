@@ -239,7 +239,7 @@ export async function ensureUserSubscriptionProfile(user: User): Promise<UserSub
       new Date()
     );
 
-    const isExpired = Date.now() >= new Date(trialEndsAt).getTime();
+    const isExpired = false;
 
     const profileData = {
       userId: user.uid,
@@ -250,8 +250,8 @@ export async function ensureUserSubscriptionProfile(user: User): Promise<UserSub
       trialStartedAtIso: trialStartedAt,
       trialEndsAt: Timestamp.fromDate(new Date(trialEndsAt)),
       trialEndsAtIso: trialEndsAt,
-      trialStatus: isExpired ? 'expired' : 'active',
-      subscriptionStatus: 'none',
+      trialStatus: 'active' as const,
+      subscriptionStatus: 'none' as const,
       planId: null,
     };
 

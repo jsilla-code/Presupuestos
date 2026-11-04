@@ -59,8 +59,8 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
       onSuccessToast?.('Sesión iniciada con Google');
       onSuccessAuth?.();
     } catch (err: unknown) {
-      const code = (err as { code?: string })?.code || '';
-      setErrorMsg(getFriendlyErrorMessage(code));
+      console.error('[PresuFollow Auth Screen] Error al iniciar sesión con Google:', err);
+      setErrorMsg(getFriendlyErrorMessage(err));
     } finally {
       setSubmitting(false);
     }
@@ -95,8 +95,8 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
         setInfoMsg('Hemos enviado un enlace de recuperación a tu correo electrónico.');
       }
     } catch (err: unknown) {
-      const code = (err as { code?: string })?.code || '';
-      setErrorMsg(getFriendlyErrorMessage(code));
+      console.error('[PresuFollow Auth Screen] Error en autenticación:', err);
+      setErrorMsg(getFriendlyErrorMessage(err));
     } finally {
       setSubmitting(false);
     }
@@ -191,7 +191,29 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
         {/* Error message */}
         {errorMsg && (
           <div className="errs" style={{ marginBottom: '16px' }} role="alert">
-            <p>{errorMsg}</p>
+            <p style={{ margin: 0 }}>{errorMsg}</p>
+            {typeof window !== 'undefined' && window.self !== window.top && (
+              <div style={{ marginTop: '10px' }}>
+                <a
+                  href={window.location.href}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="btn sm"
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '6px',
+                    background: 'var(--surface)',
+                    color: 'var(--ink)',
+                    textDecoration: 'none',
+                    fontSize: '0.84rem',
+                    padding: '6px 12px',
+                  }}
+                >
+                  Abrir en pestaña independiente ↗
+                </a>
+              </div>
+            )}
           </div>
         )}
 

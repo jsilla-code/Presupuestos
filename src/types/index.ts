@@ -18,6 +18,19 @@ export interface QuoteHistory {
 
 export type QuoteStatus = 'borrador' | 'enviado' | 'aceptado' | 'rechazado' | 'cancelado';
 
+export type PaymentMethod = 'transferencia' | 'efectivo' | 'tarjeta' | 'bizum' | 'otro';
+
+export interface Payment {
+  id: string;
+  fecha: string; // YYYY-MM-DD
+  cantidad: number; // in cents (integer)
+  metodo?: PaymentMethod;
+  notas?: string;
+  createdAt?: string; // ISO datetime
+}
+
+export type PaymentStatus = 'pendiente' | 'parcial' | 'cobrado';
+
 export interface Quote {
   id: string;
   num: string;
@@ -39,6 +52,7 @@ export interface Quote {
   enviado: string | null; // YYYY-MM-DD
   seg: FollowUpStep[];
   hist: QuoteHistory[];
+  pagos?: Payment[];
 }
 
 export interface Settings {

@@ -43,8 +43,8 @@ export const AuthModal: React.FC<AuthModalProps> = ({
       onSuccessToast?.('Sesión iniciada con Google');
       onClose();
     } catch (err: unknown) {
-      const code = (err as { code?: string })?.code || '';
-      setErrorMsg(getFriendlyErrorMessage(code));
+      console.error('[PresuFollow Auth Modal] Error al iniciar sesión con Google:', err);
+      setErrorMsg(getFriendlyErrorMessage(err));
     } finally {
       setSubmitting(false);
     }
@@ -79,8 +79,8 @@ export const AuthModal: React.FC<AuthModalProps> = ({
         setInfoMsg('Hemos enviado un enlace de recuperación a tu correo.');
       }
     } catch (err: unknown) {
-      const code = (err as { code?: string })?.code || '';
-      setErrorMsg(getFriendlyErrorMessage(code));
+      console.error('[PresuFollow Auth Modal] Error en autenticación:', err);
+      setErrorMsg(getFriendlyErrorMessage(err));
     } finally {
       setSubmitting(false);
     }
@@ -173,7 +173,29 @@ export const AuthModal: React.FC<AuthModalProps> = ({
         {/* Alerts */}
         {errorMsg && (
           <div className="errs" style={{ marginBottom: '14px' }}>
-            <p>{errorMsg}</p>
+            <p style={{ margin: 0 }}>{errorMsg}</p>
+            {typeof window !== 'undefined' && window.self !== window.top && (
+              <div style={{ marginTop: '8px' }}>
+                <a
+                  href={window.location.href}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="btn sm"
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '6px',
+                    background: 'var(--surface)',
+                    color: 'var(--ink)',
+                    textDecoration: 'none',
+                    fontSize: '0.82rem',
+                    padding: '5px 10px',
+                  }}
+                >
+                  Abrir en pestaña independiente ↗
+                </a>
+              </div>
+            )}
           </div>
         )}
 

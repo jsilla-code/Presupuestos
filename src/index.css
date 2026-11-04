@@ -461,6 +461,24 @@ button.item:hover {
   border-radius: 1px;
 }
 
+.chip-cobrado {
+  background: var(--ok-soft);
+  color: var(--ok);
+  border: 1px solid rgba(22, 101, 52, 0.2);
+}
+
+.chip-parcial {
+  background: rgba(14, 165, 233, 0.14);
+  color: #0284c7;
+  border: 1px solid rgba(14, 165, 233, 0.28);
+}
+
+.chip-pendiente-cobro {
+  background: var(--surface-2);
+  color: var(--muted);
+  border: 1px solid var(--line);
+}
+
 .strip {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));

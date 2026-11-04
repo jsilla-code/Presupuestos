@@ -91,6 +91,12 @@ service cloud.firestore {
       match /quotes/{quoteId} {
         allow read: if request.auth != null && request.auth.uid == userId;
         allow create, update, delete: if request.auth != null && request.auth.uid == userId && hasActiveAccess(userId);
+
+        // Payments subcollection: user can only read and manage payments for their own quotes
+        match /pagos/{pagoId} {
+          allow read: if request.auth != null && request.auth.uid == userId;
+          allow create, update, delete: if request.auth != null && request.auth.uid == userId && hasActiveAccess(userId);
+        }
       }
     }
   }

@@ -1,7 +1,9 @@
 import React, { useState } from 'react';
+import { CreditCard } from 'lucide-react';
 import { Quote, StatsPeriod } from '../types';
 import { fmt, qTotal } from '../utils/calc';
 import { diffDays, isVencido, today } from '../utils/date';
+import { calcFinancialSummary } from '../utils/payments';
 
 interface EstadisticasViewProps {
   quotes: Quote[];
@@ -16,6 +18,7 @@ export const EstadisticasView: React.FC<EstadisticasViewProps> = ({ quotes }) =>
   if (period === 'anio') from = t.slice(0, 4) + '-01-01';
 
   const sent = quotes.filter((q) => q.enviado && (!from || q.enviado >= from));
+  const financialSummary = calcFinancialSummary(quotes, { from });
 
   const A: Quote[] = [];
   const R: Quote[] = [];
@@ -108,8 +111,131 @@ export const EstadisticasView: React.FC<EstadisticasViewProps> = ({ quotes }) =>
             </div>
 
             <p className="hint" style={{ marginTop: '6px' }}>
-              Son importes presupuestados. Un presupuesto aceptado no es dinero cobrado.
+              Los importes anteriores corresponden a propuestas comerciales. A continuación puedes consultar los cobros reales registrados.
             </p>
+          </section>
+
+          {/* Resumen económico del periodo */}
+          <section className="card" style={{ background: 'var(--surface)' }}>
+            <div
+              style={{
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+                marginBottom: '10px',
+                flexWrap: 'wrap',
+                gap: '8px',
+              }}
+            >
+              <h3
+                style={{
+                  margin: 0,
+                  fontSize: '1rem',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '7px',
+                }}
+              >
+                <CreditCard size={17} color="var(--accent)" />
+                <span>Cobros y facturación de presupuestos aceptados</span>
+              </h3>
+              {financialSummary.totalPresupuestado > 0 && (
+                <span
+                  style={{
+                    fontSize: '0.78rem',
+                    fontWeight: 600,
+                    color: financialSummary.pendienteCobro === 0 ? 'var(--ok)' : 'var(--accent)',
+                    background:
+                      financialSummary.pendienteCobro === 0
+                        ? 'var(--ok-soft)'
+                        : 'var(--accent-soft)',
+                    padding: '2px 8px',
+                    borderRadius: '99px',
+                  }}
+                >
+                  {financialSummary.porcentajeCobrado} % cobrado
+                </span>
+              )}
+            </div>
+
+            <div
+              style={{
+                display: 'grid',
+                gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))',
+                gap: '10px',
+              }}
+            >
+              <div
+                style={{
+                  background: 'var(--surface-2)',
+                  border: '1px solid var(--line)',
+                  borderRadius: '8px',
+                  padding: '10px 12px',
+                }}
+              >
+                <div className="k" style={{ fontSize: '0.76rem', color: 'var(--muted)', marginBottom: '2px' }}>
+                  Total presupuestado
+                </div>
+                <div className="v num" style={{ fontSize: '1.2rem', fontWeight: 700, color: 'var(--ink)' }}>
+                  {fmt(financialSummary.totalPresupuestado)}
+                </div>
+                <div className="s muted" style={{ fontSize: '0.74rem' }}>
+                  {financialSummary.countAceptados} {financialSummary.countAceptados === 1 ? 'aceptado' : 'aceptados'}
+                </div>
+              </div>
+
+              <div
+                style={{
+                  background: 'var(--surface-2)',
+                  border: '1px solid var(--line)',
+                  borderRadius: '8px',
+                  padding: '10px 12px',
+                }}
+              >
+                <div className="k" style={{ fontSize: '0.76rem', color: 'var(--muted)', marginBottom: '2px' }}>
+                  Total cobrado
+                </div>
+                <div
+                  className="v num"
+                  style={{
+                    fontSize: '1.2rem',
+                    fontWeight: 700,
+                    color: financialSummary.totalCobrado > 0 ? 'var(--ok)' : 'var(--ink)',
+                  }}
+                >
+                  {fmt(financialSummary.totalCobrado)}
+                </div>
+                <div className="s muted" style={{ fontSize: '0.74rem' }}>
+                  Pagos registrados
+                </div>
+              </div>
+
+              <div
+                style={{
+                  background: 'var(--surface-2)',
+                  border: '1px solid var(--line)',
+                  borderRadius: '8px',
+                  padding: '10px 12px',
+                }}
+              >
+                <div className="k" style={{ fontSize: '0.76rem', color: 'var(--muted)', marginBottom: '2px' }}>
+                  Pendiente de cobro
+                </div>
+                <div
+                  className="v num"
+                  style={{
+                    fontSize: '1.2rem',
+                    fontWeight: 700,
+                    color: financialSummary.pendienteCobro > 0 ? 'var(--pending)' : 'var(--muted)',
+                  }}
+                >
+                  {fmt(financialSummary.pendienteCobro)}
+                </div>
+                <div className="s muted" style={{ fontSize: '0.74rem' }}>
+                  {financialSummary.countParciales + financialSummary.countPendientes} con saldo
+                </div>
+              </div>
+            </div>
           </section>
 
           {/* Key Metrics */}

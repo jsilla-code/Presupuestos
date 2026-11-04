@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
-import { Quote, Settings } from '../types';
+import { CreditCard, Plus, Pencil, Trash2, CheckCircle2, AlertTriangle } from 'lucide-react';
+import { Payment, Quote, Settings } from '../types';
 import { MOTIVOS, calc, fmt, lineTotal, num, rnd } from '../utils/calc';
 import { addDays, fdate, getDueStatus, isVencido, nextFu, today } from '../utils/date';
 import {
@@ -11,7 +12,9 @@ import {
   neg,
   waUrl,
 } from '../utils/messages';
+import { calcPaymentInfo, getPaymentMethodLabel } from '../utils/payments';
 import { Chip } from './Chip';
+import { PaymentModal } from './PaymentModal';
 
 interface DetalleViewProps {
   quote: Quote;
@@ -26,6 +29,9 @@ interface DetalleViewProps {
   onMarkSent: (quoteId: string) => void;
   onFollowUpDone: (quoteId: string, stepIndex: number) => void;
   onCopyText: (text: string, toastMsg?: string) => void;
+  onAddPayment: (quoteId: string, paymentData: Omit<Payment, 'id'>) => Promise<boolean | void>;
+  onEditPayment: (quoteId: string, paymentId: string, paymentData: Omit<Payment, 'id'>) => Promise<boolean | void>;
+  onDeletePayment: (quoteId: string, paymentId: string) => Promise<boolean | void>;
 }
 
 export const DetalleView: React.FC<DetalleViewProps> = ({
@@ -41,11 +47,20 @@ export const DetalleView: React.FC<DetalleViewProps> = ({
   onMarkSent,
   onFollowUpDone,
   onCopyText,
+  onAddPayment,
+  onEditPayment,
+  onDeletePayment,
 }) => {
   const [confirmAction, setConfirmAction] = useState<'cancel' | 'del' | null>(null);
   const [resolvingState, setResolvingState] = useState<'aceptado' | 'rechazado' | null>(null);
   const [resolveNote, setResolveNote] = useState('');
   const [resolveMotivo, setResolveMotivo] = useState(MOTIVOS[0]);
+
+  // Payment management state
+  const [isPaymentModalOpen, setIsPaymentModalOpen] = useState(false);
+  const [paymentToEdit, setPaymentToEdit] = useState<Payment | null>(null);
+  const [confirmDeletePaymentId, setConfirmDeletePaymentId] = useState<string | null>(null);
+  const [isDeletingPayment, setIsDeletingPayment] = useState(false);
 
   // Message panel state
   const n = nextFu(quote);
@@ -63,6 +78,7 @@ export const DetalleView: React.FC<DetalleViewProps> = ({
   }, [quote.id, quote.estado, n?.i]);
 
   const c = calc(quote.lineas);
+  const payInfo = calcPaymentInfo(quote);
   const vencido = isVencido(quote);
 
   const getSubj = () => {
@@ -405,6 +421,392 @@ export const DetalleView: React.FC<DetalleViewProps> = ({
             )}
           </section>
 
+          {/* Estado de cobro y pagos */}
+          <section
+            className="panel"
+            style={{
+              borderColor:
+                payInfo.status === 'cobrado'
+                  ? 'rgba(22, 101, 52, 0.4)'
+                  : payInfo.status === 'parcial'
+                  ? 'rgba(14, 165, 233, 0.35)'
+                  : undefined,
+            }}
+          >
+            <div
+              className="btnrow"
+              style={{ justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}
+            >
+              <h3
+                style={{
+                  margin: 0,
+                  fontSize: '1.05rem',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '7px',
+                }}
+              >
+                <CreditCard size={18} color="var(--accent)" />
+                <span>Estado de cobro</span>
+              </h3>
+              <span
+                className={`chip chip-${
+                  payInfo.status === 'cobrado'
+                    ? 'cobrado'
+                    : payInfo.status === 'parcial'
+                    ? 'parcial'
+                    : 'pendiente-cobro'
+                }`}
+              >
+                {payInfo.statusLabel}
+              </span>
+            </div>
+
+            {/* Financial Amounts Trio */}
+            <div
+              style={{
+                display: 'grid',
+                gridTemplateColumns: 'repeat(3, 1fr)',
+                gap: '8px',
+                background: 'var(--surface-2)',
+                border: '1px solid var(--line)',
+                borderRadius: '8px',
+                padding: '10px',
+                textAlign: 'center',
+                marginBottom: '10px',
+              }}
+            >
+              <div>
+                <div className="muted" style={{ fontSize: '0.74rem', marginBottom: '2px' }}>
+                  Importe total
+                </div>
+                <div className="num" style={{ fontWeight: 700, fontSize: '0.98rem' }}>
+                  {fmt(payInfo.total)}
+                </div>
+              </div>
+              <div>
+                <div className="muted" style={{ fontSize: '0.74rem', marginBottom: '2px' }}>
+                  Importe cobrado
+                </div>
+                <div
+                  className="num"
+                  style={{
+                    fontWeight: 700,
+                    fontSize: '0.98rem',
+                    color: payInfo.cobrado > 0 ? 'var(--ok)' : 'var(--ink)',
+                  }}
+                >
+                  {fmt(payInfo.cobrado)}
+                </div>
+              </div>
+              <div>
+                <div className="muted" style={{ fontSize: '0.74rem', marginBottom: '2px' }}>
+                  Pendiente de cobro
+                </div>
+                <div
+                  className="num"
+                  style={{
+                    fontWeight: 700,
+                    fontSize: '0.98rem',
+                    color: payInfo.pendiente > 0 ? 'var(--pending)' : 'var(--muted)',
+                  }}
+                >
+                  {fmt(payInfo.pendiente)}
+                </div>
+              </div>
+            </div>
+
+            {/* Progress Bar */}
+            <div style={{ marginBottom: '14px' }}>
+              <div
+                style={{
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'baseline',
+                  fontSize: '0.78rem',
+                  color: 'var(--muted)',
+                  marginBottom: '4px',
+                }}
+              >
+                <span>Progreso de cobro</span>
+                <span className="num" style={{ fontWeight: 700, color: 'var(--ink)' }}>
+                  {payInfo.porcentaje} %
+                </span>
+              </div>
+              <div
+                style={{
+                  height: '7px',
+                  background: 'var(--surface-2)',
+                  borderRadius: '99px',
+                  overflow: 'hidden',
+                  border: '1px solid var(--line)',
+                }}
+              >
+                <div
+                  style={{
+                    height: '100%',
+                    width: `${payInfo.porcentaje}%`,
+                    background:
+                      payInfo.status === 'cobrado'
+                        ? 'var(--ok)'
+                        : 'var(--accent)',
+                    transition: 'width 0.3s ease',
+                  }}
+                />
+              </div>
+            </div>
+
+            {/* Warning if overpaid */}
+            {payInfo.isOverpaid && (
+              <div
+                style={{
+                  background: 'var(--warn-soft)',
+                  color: 'var(--warn)',
+                  border: '1px solid rgba(180, 83, 9, 0.3)',
+                  borderRadius: '8px',
+                  padding: '9px 12px',
+                  fontSize: '0.84rem',
+                  display: 'flex',
+                  alignItems: 'flex-start',
+                  gap: '8px',
+                  marginBottom: '12px',
+                }}
+              >
+                <AlertTriangle size={18} style={{ flexShrink: 0, marginTop: '2px' }} />
+                <span>
+                  <strong>Atención:</strong> El importe total actual ({fmt(payInfo.total)}) es inferior a los pagos ya registrados ({fmt(payInfo.cobrado)}). Revisa las líneas o los pagos para evitar inconsistencias.
+                </span>
+              </div>
+            )}
+
+            {/* Action button */}
+            {payInfo.status === 'cobrado' ? (
+              <div
+                style={{
+                  background: 'var(--ok-soft)',
+                  color: 'var(--ok)',
+                  border: '1px solid rgba(22, 101, 52, 0.25)',
+                  borderRadius: '8px',
+                  padding: '8px 12px',
+                  fontSize: '0.86rem',
+                  fontWeight: 600,
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: '8px',
+                  marginBottom: '16px',
+                }}
+              >
+                <CheckCircle2 size={16} />
+                <span>Presupuesto totalmente cobrado (100 %)</span>
+              </div>
+            ) : (
+              <button
+                type="button"
+                className="btn btn-primary sm"
+                style={{
+                  width: '100%',
+                  marginBottom: '16px',
+                  padding: '9px 12px',
+                  justifyContent: 'center',
+                  fontWeight: 700,
+                }}
+                onClick={() => {
+                  setPaymentToEdit(null);
+                  setIsPaymentModalOpen(true);
+                }}
+              >
+                <Plus size={16} />
+                <span>Registrar pago</span>
+              </button>
+            )}
+
+            {/* Historial de pagos */}
+            <div>
+              <div
+                style={{
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'baseline',
+                  marginBottom: '8px',
+                }}
+              >
+                <h4 style={{ margin: 0, fontSize: '0.94rem', color: 'var(--ink)' }}>
+                  Historial de pagos ({payInfo.paymentsCount})
+                </h4>
+                {payInfo.status === 'cobrado' && (
+                  <button
+                    type="button"
+                    className="btn btn-quiet sm"
+                    style={{ fontSize: '0.78rem', padding: '1px 6px' }}
+                    onClick={() => {
+                      setPaymentToEdit(null);
+                      setIsPaymentModalOpen(true);
+                    }}
+                    title="Añadir ajuste o pago adicional"
+                  >
+                    + Añadir otro pago
+                  </button>
+                )}
+              </div>
+
+              {(!quote.pagos || quote.pagos.length === 0) ? (
+                <p className="hint" style={{ margin: 0, fontSize: '0.86rem' }}>
+                  Todavía no se ha registrado ningún pago para este presupuesto. Pulsa «Registrar pago» cuando recibas un anticipo o liquidación.
+                </p>
+              ) : (
+                <div className="stack" style={{ gap: '8px' }}>
+                  {quote.pagos.map((p) => {
+                    const isConfirmingDelete = confirmDeletePaymentId === p.id;
+                    return (
+                      <div
+                        key={p.id}
+                        style={{
+                          background: 'var(--surface)',
+                          border: '1px solid var(--line)',
+                          borderRadius: '8px',
+                          padding: '10px 12px',
+                          display: 'flex',
+                          flexDirection: 'column',
+                          gap: '6px',
+                        }}
+                      >
+                        <div
+                          style={{
+                            display: 'flex',
+                            justifyContent: 'space-between',
+                            alignItems: 'baseline',
+                          }}
+                        >
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                            <span className="num" style={{ fontWeight: 700, fontSize: '0.96rem' }}>
+                              {fmt(p.cantidad)}
+                            </span>
+                            {p.metodo && (
+                              <span
+                                style={{
+                                  fontSize: '0.74rem',
+                                  padding: '1px 6px',
+                                  borderRadius: '4px',
+                                  background: 'var(--surface-2)',
+                                  color: 'var(--muted)',
+                                  border: '1px solid var(--line)',
+                                }}
+                              >
+                                {getPaymentMethodLabel(p.metodo)}
+                              </span>
+                            )}
+                          </div>
+                          <span className="muted" style={{ fontSize: '0.8rem' }}>
+                            {fdate(p.fecha)}
+                          </span>
+                        </div>
+
+                        {p.notas && (
+                          <p
+                            className="hint"
+                            style={{ margin: 0, fontSize: '0.82rem', whiteSpace: 'pre-wrap' }}
+                          >
+                            {p.notas}
+                          </p>
+                        )}
+
+                        {/* Payment action buttons */}
+                        <div
+                          style={{
+                            display: 'flex',
+                            justifyContent: 'flex-end',
+                            gap: '6px',
+                            marginTop: '2px',
+                          }}
+                        >
+                          {isConfirmingDelete ? (
+                            <div
+                              style={{
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: '6px',
+                                background: 'var(--bad-soft)',
+                                padding: '4px 8px',
+                                borderRadius: '6px',
+                              }}
+                            >
+                              <span
+                                style={{
+                                  fontSize: '0.78rem',
+                                  color: 'var(--bad)',
+                                  fontWeight: 600,
+                                }}
+                              >
+                                ¿Eliminar pago?
+                              </span>
+                              <button
+                                type="button"
+                                className="btn btn-bad sm"
+                                disabled={isDeletingPayment}
+                                style={{ padding: '2px 8px', fontSize: '0.78rem' }}
+                                onClick={async () => {
+                                  setIsDeletingPayment(true);
+                                  try {
+                                    await onDeletePayment(quote.id, p.id);
+                                    setConfirmDeletePaymentId(null);
+                                  } finally {
+                                    setIsDeletingPayment(false);
+                                  }
+                                }}
+                              >
+                                {isDeletingPayment ? '...' : 'Sí, eliminar'}
+                              </button>
+                              <button
+                                type="button"
+                                className="btn btn-quiet sm"
+                                disabled={isDeletingPayment}
+                                style={{ padding: '2px 6px', fontSize: '0.78rem' }}
+                                onClick={() => setConfirmDeletePaymentId(null)}
+                              >
+                                Cancelar
+                              </button>
+                            </div>
+                          ) : (
+                            <>
+                              <button
+                                type="button"
+                                className="btn btn-quiet sm"
+                                style={{ padding: '2px 6px', fontSize: '0.78rem' }}
+                                onClick={() => {
+                                  setPaymentToEdit(p);
+                                  setIsPaymentModalOpen(true);
+                                }}
+                                title="Editar importe, fecha u observaciones"
+                              >
+                                <Pencil size={13} style={{ marginRight: '3px' }} />
+                                Editar
+                              </button>
+                              <button
+                                type="button"
+                                className="btn btn-quiet sm"
+                                style={{
+                                  padding: '2px 6px',
+                                  fontSize: '0.78rem',
+                                  color: 'var(--bad)',
+                                }}
+                                onClick={() => setConfirmDeletePaymentId(p.id)}
+                                title="Eliminar pago registrado"
+                              >
+                                <Trash2 size={13} style={{ marginRight: '3px' }} />
+                                Eliminar
+                              </button>
+                            </>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          </section>
+
           {/* Message Panel for sending or follow-up */}
           {(quote.estado === 'borrador' || n) && (
             <section className="panel">
@@ -501,6 +903,24 @@ export const DetalleView: React.FC<DetalleViewProps> = ({
           </section>
         </div>
       </div>
+
+      {/* Modal para registrar o editar pagos */}
+      <PaymentModal
+        isOpen={isPaymentModalOpen}
+        onClose={() => {
+          setIsPaymentModalOpen(false);
+          setPaymentToEdit(null);
+        }}
+        quote={quote}
+        paymentToEdit={paymentToEdit}
+        onSavePayment={async (paymentData, paymentId) => {
+          if (paymentId) {
+            return await onEditPayment(quote.id, paymentId, paymentData);
+          } else {
+            return await onAddPayment(quote.id, paymentData);
+          }
+        }}
+      />
     </div>
   );
 };

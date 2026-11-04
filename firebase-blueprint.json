@@ -36,9 +36,24 @@
         "condiciones": { "type": "string" },
         "lineas": { "type": "array" },
         "seg": { "type": "array" },
-        "hist": { "type": "array" }
+        "hist": { "type": "array" },
+        "pagos": { "type": "array" }
       },
       "required": ["id", "num", "cliente", "titulo", "estado", "lineas"]
+    },
+    "Payment": {
+      "title": "Payment",
+      "description": "Payment record received for a quote",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "fecha": { "type": "string", "maxLength": 10 },
+        "cantidad": { "type": "number" },
+        "metodo": { "type": "string", "enum": ["transferencia", "efectivo", "tarjeta", "bizum", "otro"] },
+        "notas": { "type": "string", "maxLength": 512 },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["id", "fecha", "cantidad"]
     },
     "UserProfile": {
       "title": "UserProfile",
@@ -97,6 +112,10 @@
     "/users/{userId}/quotes/{quoteId}": {
       "schema": "Quote",
       "description": "User commercial quotes and proposals"
+    },
+    "/users/{userId}/quotes/{quoteId}/pagos/{pagoId}": {
+      "schema": "Payment",
+      "description": "Payments received for a specific quote"
     },
     "/survey_responses/{responseId}": {
       "schema": "SurveyResponse",

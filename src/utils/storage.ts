@@ -1,4 +1,4 @@
-import { AppState, LineItem, Quote, QuoteStatus } from '../types';
+import { AppState, LineItem, Payment, Quote, QuoteStatus } from '../types';
 import { nextNum, uid } from './calc';
 import { addDays, today } from './date';
 
@@ -26,6 +26,7 @@ interface SeedQuoteInput {
   res?: number;
   motivo?: string;
   lineas: LineItem[];
+  pagos?: Payment[];
 }
 
 export function seed(): AppState {
@@ -67,6 +68,7 @@ export function seed(): AppState {
       enviado: sent ? ago(o.sentAgo!) : null,
       seg: [],
       hist: [],
+      pagos: o.pagos || [],
     };
 
     if (sent) {
@@ -153,6 +155,15 @@ export function seed(): AppState {
       L('Caldera de condensación 24 kW', 1, 1650, 5),
       L('Desmontaje y retirada de la anterior', 1, 120),
       L('Instalación y puesta en marcha', 1, 340),
+    ],
+    pagos: [
+      {
+        id: 'pay_demo_1',
+        fecha: ago(5),
+        cantidad: 100000,
+        metodo: 'transferencia',
+        notas: 'Anticipo acordado al aceptar el presupuesto',
+      },
     ],
   });
 

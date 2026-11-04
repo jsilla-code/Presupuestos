@@ -2,6 +2,7 @@ import React from 'react';
 import { ListFilter, Quote } from '../types';
 import { fmt, qTotal } from '../utils/calc';
 import { fdate, getDueStatus, getStatusInfo, isVencido, nextFu } from '../utils/date';
+import { calcPaymentInfo } from '../utils/payments';
 import { Chip } from './Chip';
 
 interface ListaViewProps {
@@ -128,6 +129,9 @@ export const ListaView: React.FC<ListaViewProps> = ({
                   </span>
                 );
 
+              const payInfo = calcPaymentInfo(x);
+              const showPaymentChip = x.estado === 'aceptado' || (x.pagos && x.pagos.length > 0);
+
               return (
                 <button
                   key={x.id}
@@ -142,9 +146,26 @@ export const ListaView: React.FC<ListaViewProps> = ({
                     </div>
                     <div className="sub">{extraNode}</div>
                   </div>
-                  <div className="side">
+                  <div className="side" style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '4px' }}>
                     <span className="amt num">{fmt(qTotal(x))}</span>
-                    <Chip quote={x} />
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '5px', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+                      <Chip quote={x} />
+                      {showPaymentChip && (
+                        <span
+                          className={`chip chip-${
+                            payInfo.status === 'cobrado'
+                              ? 'cobrado'
+                              : payInfo.status === 'parcial'
+                              ? 'parcial'
+                              : 'pendiente-cobro'
+                          }`}
+                          style={{ fontSize: '0.74rem', padding: '1px 7px' }}
+                          title={`Cobrado: ${fmt(payInfo.cobrado)} · Pendiente: ${fmt(payInfo.pendiente)}`}
+                        >
+                          {payInfo.status === 'parcial' ? `Cobrado ${payInfo.porcentaje}%` : payInfo.statusLabel}
+                        </span>
+                      )}
+                    </div>
                   </div>
                 </button>
               );
