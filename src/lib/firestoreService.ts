@@ -106,12 +106,27 @@ export function subscribeToUserSettings(
   );
 }
 
+// Helper to remove any undefined fields before sending to Firestore
+function sanitizeData<T>(obj: T): T {
+  if (obj === null || obj === undefined) return null as unknown as T;
+  if (typeof obj !== 'object') return obj;
+  if (Array.isArray(obj)) return obj.map((item) => sanitizeData(item)) as unknown as T;
+  const result: Record<string, unknown> = {};
+  for (const [key, val] of Object.entries(obj)) {
+    if (val !== undefined) {
+      result[key] = sanitizeData(val);
+    }
+  }
+  return result as T;
+}
+
 // Save or update a single quote in Firestore
 export async function saveUserQuote(userId: string, quote: Quote): Promise<boolean> {
   const path = `users/${userId}/quotes/${quote.id}`;
   try {
     const quoteRef = doc(db, 'users', userId, 'quotes', quote.id);
-    await setDoc(quoteRef, quote, { merge: true });
+    const cleanQuote = sanitizeData(quote);
+    await setDoc(quoteRef, cleanQuote, { merge: true });
     return true;
   } catch (error) {
     handleFirestoreError(error, OperationType.WRITE, path);
@@ -137,7 +152,8 @@ export async function saveUserSettings(userId: string, settings: Settings): Prom
   const path = `users/${userId}/settings/config`;
   try {
     const settingsRef = doc(db, 'users', userId, 'settings', 'config');
-    await setDoc(settingsRef, settings, { merge: true });
+    const cleanSettings = sanitizeData(settings);
+    await setDoc(settingsRef, cleanSettings, { merge: true });
     return true;
   } catch (error) {
     handleFirestoreError(error, OperationType.WRITE, path);
@@ -152,7 +168,8 @@ export async function seedUserQuotes(userId: string, quotes: Quote[]): Promise<b
     const batch = writeBatch(db);
     quotes.forEach((q) => {
       const qRef = doc(db, 'users', userId, 'quotes', q.id);
-      batch.set(qRef, q);
+      const cleanQuote = sanitizeData(q);
+      batch.set(qRef, cleanQuote);
     });
     await batch.commit();
     return true;
